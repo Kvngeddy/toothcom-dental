@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Sora", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #16130F;
+  --color-ink-soft: #251F19;
+  --color-clinic-orange: #E8622C;
+  --color-clinic-orange-dark: #C94F1F;
+  --color-clinic-orange-tint: #FDECE2;
+  --color-clinic-cream: #FBF9F7;
+  --color-slate-text: #3F3A37;
+  --color-slate-muted: #8A827B;
+  --color-border-soft: #ECE6E0;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    font-family: var(--font-body);
+    background-color: var(--color-clinic-cream);
+    color: var(--color-slate-text);
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+}
+
+/* Signature element: molar-cusp active nav indicator */
+.nav-cusp {
+  position: relative;
+}
+.nav-cusp::before {
+  content: "";
+  position: absolute;
+  left: -1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0.5rem;
+  height: 1.75rem;
+  background: var(--color-clinic-orange);
+  border-radius: 0 999px 999px 0;
+}

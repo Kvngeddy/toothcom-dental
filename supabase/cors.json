@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://your-production-domain.com"],
+    "method": ["PUT", "GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
