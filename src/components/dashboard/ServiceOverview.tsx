@@ -14,7 +14,7 @@ const ICONS: Record<ServiceItem['icon'], React.ReactNode> = {
   specialist: <BriefcaseMedical size={17} />,
 }
 
-export default function ServicesOverview({ services }: { services: ServiceItem[] }) {
+export default function ServicesOverview({ services, isAdmin }: { services: ServiceItem[]; isAdmin: boolean }) {
   const navigate = useNavigate()
   return (
     <Card>
@@ -36,7 +36,7 @@ export default function ServicesOverview({ services }: { services: ServiceItem[]
             <div>
               <p className="text-[13.5px] font-semibold text-[#101B1A]">{service.name}</p>
               <p className="mt-0.5 text-[12px] text-[#8AA6A2]">{service.appointmentsThisWeek} appointments</p>
-              {service.revenueThisMonth !== undefined && (
+              {isAdmin && service.revenueThisMonth !== undefined && (
                 <p className="mt-1 text-[12px] font-medium text-[#0A5F59]">{formatCurrency(service.revenueThisMonth)} this month</p>
               )}
             </div>

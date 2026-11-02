@@ -12,9 +12,9 @@ export default function AppointmentsOverview({ appointments }: { appointments: A
         title="Today's Appointments"
         subtitle={`${appointments.length} scheduled today`}
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
             <LinkButton to="/appointments">View all</LinkButton>
-            <PrimaryButton onClick={() => navigate('/appointments?new=1')} size="sm">
+            <PrimaryButton onClick={() => navigate('/appointments?new=1')} size="sm" className="justify-center whitespace-nowrap">
               <Plus size={14} /> New appointment
             </PrimaryButton>
           </div>

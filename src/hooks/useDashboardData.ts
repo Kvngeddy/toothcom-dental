@@ -59,7 +59,7 @@ function categoryToIcon(category: string): ServiceItem['icon'] {
   return 'dental'
 }
 
-export function useDashboardData(locationId: string | null) {
+export function useDashboardData(locationId: string | null, isAdmin: boolean) {
   const [loading, setLoading] = useState(true)
   const [patientStats, setPatientStats] = useState<PatientStats | null>(null)
   const [appointmentsSnapshot, setAppointmentsSnapshot] = useState<AppointmentsSnapshot | null>(null)
@@ -177,8 +177,16 @@ export function useDashboardData(locationId: string | null) {
     }
 
     // ---- Staff ----
-    const { count: totalStaff } = await supabase.from('staff').select('*', { head: true, count: 'exact' }).eq('location_id', locationId)
-    const { data: members } = await supabase.from('staff').select('id, full_name, role').eq('location_id', locationId).limit(8).order('full_name', { ascending: true })
+    let totalStaff = 0
+    let members: { id: string; full_name: string; role: string }[] = []
+    if (isAdmin) {
+      const [{ count }, { data }] = await Promise.all([
+        supabase.from('staff').select('*', { head: true, count: 'exact' }).eq('location_id', locationId),
+        supabase.from('staff').select('id, full_name, role').eq('location_id', locationId).limit(8).order('full_name', { ascending: true }),
+      ])
+      totalStaff = count ?? 0
+      members = data ?? []
+    }
 
     const staffMembers: StaffMember[] = (members ?? []).map((m: any) => {
       const role = (m.role || '').toLowerCase()
@@ -220,11 +228,15 @@ export function useDashboardData(locationId: string | null) {
       }
     })
 
-    const { data: invoiceItemsRaw } = await supabase
-      .from('invoice_items')
-      .select('service_id, line_total, invoices!inner(created_at, status, location_id)')
-      .not('service_id', 'is', null)
-      .eq('invoices.location_id', locationId)
+    let invoiceItemsRaw: any[] = []
+    if (isAdmin) {
+      const { data } = await supabase
+        .from('invoice_items')
+        .select('service_id, line_total, invoices!inner(created_at, status, location_id)')
+        .not('service_id', 'is', null)
+        .eq('invoices.location_id', locationId)
+      invoiceItemsRaw = data ?? []
+    }
 
     const revenueByService: Record<string, number> = {}
     ;(invoiceItemsRaw ?? []).forEach((item: any) => {
@@ -261,12 +273,16 @@ export function useDashboardData(locationId: string | null) {
         date: new Date(a.scheduled_at),
       }))
 
-    const { data: recentPayments } = await supabase
-      .from('payments')
-      .select('id, amount, paid_at, invoices!inner(location_id, patients(full_name)), staff:recorded_by(full_name)')
-      .eq('invoices.location_id', locationId)
-      .order('paid_at', { ascending: false })
-      .limit(6)
+    let recentPayments: any[] = []
+    if (isAdmin) {
+      const { data } = await supabase
+        .from('payments')
+        .select('id, amount, paid_at, invoices!inner(location_id, patients(full_name)), staff:recorded_by(full_name)')
+        .eq('invoices.location_id', locationId)
+        .order('paid_at', { ascending: false })
+        .limit(6)
+      recentPayments = data ?? []
+    }
 
     const paymentEvents = (recentPayments ?? []).map((p: any) => ({
       type: 'payment_recorded' as const,
@@ -294,7 +310,7 @@ export function useDashboardData(locationId: string | null) {
     setRecentActivity(combinedActivity)
 
     setLoading(false)
-  }, [locationId])
+  }, [locationId, isAdmin])
 
   useEffect(() => {
     fetchData()

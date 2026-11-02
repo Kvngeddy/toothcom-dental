@@ -24,8 +24,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function Dashboard() {
   const { selectedLocationId } = useLocation()
-  const data = useDashboardData(selectedLocationId)
-  const { staff } = useAuth()
+  const { staff, isAdmin } = useAuth()
+  const data = useDashboardData(selectedLocationId, isAdmin)
 
   return (
     <div className="flex min-h-screen bg-[#F6F8F7]" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -40,6 +40,7 @@ export default function Dashboard() {
             patientStats={data.patientStats ?? { total: 0, totalChangePercent: 0, newThisMonth: 0, returning: 0, active: 0, growth: [] }}
             appointmentsSnapshot={data.appointmentsSnapshot ?? { total: 0, upcoming: 0, completed: 0, pending: 0 }}
             staffSnapshot={data.staffSnapshot ?? { total: 0, doctors: 0, nurses: 0, administrative: 0, other: 0, members: [] }}
+            isAdmin={isAdmin}
           />
 
           {/* Tier 1–3 */}
@@ -51,28 +52,30 @@ export default function Dashboard() {
               </div>
               <div className="flex flex-col gap-6">
                 <PatientOverview stats={data.patientStats ?? { total: 0, totalChangePercent: 0, newThisMonth: 0, returning: 0, active: 0, growth: [] }} />
-                <StaffOverview snapshot={data.staffSnapshot ?? { total: 0, doctors: 0, nurses: 0, administrative: 0, other: 0, members: [] }} />
+                {isAdmin && <StaffOverview snapshot={data.staffSnapshot ?? { total: 0, doctors: 0, nurses: 0, administrative: 0, other: 0, members: [] }} />}
               </div>
             </div>
           </section>
 
           {/* Tier 4: revenue */}
-          <section>
-            <SectionLabel>Financials</SectionLabel>
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-              <div className="xl:col-span-2">
-                <RevenueOverview locationId={selectedLocationId} />
+          {isAdmin && (
+            <section>
+              <SectionLabel>Financials</SectionLabel>
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <div className="xl:col-span-2">
+                  <RevenueOverview locationId={selectedLocationId} />
+                </div>
+                <div className="flex flex-col gap-6">
+                  {/* right column placeholders (quick actions) */}
+                </div>
               </div>
-              <div className="flex flex-col gap-6">
-                {/* right column placeholders (quick actions) */}
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {/* Tier 5 */}
           <section>
             <SectionLabel>Services</SectionLabel>
-            <ServicesOverview services={data.services ?? []} />
+            <ServicesOverview services={data.services ?? []} isAdmin={isAdmin} />
           </section>
 
           {/* Tier 6–7 */}

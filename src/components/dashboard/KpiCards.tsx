@@ -171,18 +171,20 @@ export default function KpiRow({
   appointmentsSnapshot,
   staffSnapshot,
   locationId,
+  isAdmin,
 }: {
   patientStats: PatientStats
   appointmentsSnapshot: AppointmentsSnapshot
   staffSnapshot: StaffSnapshot
   locationId: string | null
+  isAdmin: boolean
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${isAdmin ? 'xl:grid-cols-4' : 'xl:grid-cols-2'}`}>
       <PatientsKpiCard stats={patientStats} />
       <AppointmentsKpiCard snapshot={appointmentsSnapshot} />
-      <StaffKpiCard snapshot={staffSnapshot} />
-      <RevenueKpiCard locationId={locationId} />
+      {isAdmin && <StaffKpiCard snapshot={staffSnapshot} />}
+      {isAdmin && <RevenueKpiCard locationId={locationId} />}
     </div>
   )
 }
