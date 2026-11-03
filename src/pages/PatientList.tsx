@@ -424,13 +424,22 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
       location_id: targetLocationId,
     })
     setSubmitting(false)
-    if (error) setError(error.message)
+    if (error) {
+      const message = error.message.toLowerCase()
+      if (message.includes('case_note_number') && (message.includes('schema cache') || message.includes('column'))) {
+        setError('The database is missing the paper case note number field. Apply supabase/migrations/0005_patient_case_note_number.sql, then try again.')
+      } else if (message.includes('patients_location_case_note_number_uidx')) {
+        setError('A paper case note number already exists for this clinic.')
+      } else {
+        setError(error.message)
+      }
+    }
     else onCreated()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-4 py-4">
+      <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display font-semibold text-lg">Add Patient</h2>
           <button onClick={onClose} className="text-slate-muted hover:text-slate-text">

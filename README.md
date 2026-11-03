@@ -39,10 +39,11 @@ npm run dev
 ## 3. Supabase setup
 
 1. Create a project at supabase.com.
-2. In the SQL editor, run `supabase/migrations/0001_init.sql`, followed by
-  `supabase/migrations/0002_locations.sql`. The location migration creates the Amuwo-Odofin
-  and Adelabu branches, assigns existing records to Amuwo-Odofin, and adds location fields
-  to the clinic data tables.
+2. In the SQL editor, run the files in `supabase/migrations` in numeric order. The later
+  migrations add location support, patient case note numbers, intake case notes, and
+  multi-service appointments. If the app reports that `case_note_number` is missing from the
+  schema cache, confirm that `0005_patient_case_note_number.sql` has been applied, then refresh
+  the Supabase API schema cache or wait for it to reload.
 3. Create your first admin:
    - Sign up a user through Supabase Auth (or the app's login form once a user exists).
    - In the SQL editor:

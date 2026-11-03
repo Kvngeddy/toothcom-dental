@@ -19,7 +19,7 @@ type Appointment = {
   status: AppointmentStatus;
   patients?: Patient;
   staff?: Staff;
-  services?: { name: string } | null;
+  services?: string[];
 };
 
 const STATUS_STYLES: Record<AppointmentStatus, string> = {
@@ -62,9 +62,7 @@ export default function AppointmentsPage() {
       await Promise.all([
         supabase
           .from("appointments")
-          .select(
-            "*, patients(id, full_name), staff(id, full_name), services(name)"
-          )
+          .select("*, patients(id, full_name), staff(id, full_name)")
           .eq("location_id", selectedLocationId)
           .order("scheduled_at", { ascending: true }),
         supabase.from("patients").select("id, full_name").eq("location_id", selectedLocationId),
@@ -74,7 +72,31 @@ export default function AppointmentsPage() {
 
     if (apptError) console.error("Failed to load appointments:", apptError.message);
 
-    setAppointments((appts as Appointment[]) ?? []);
+    const appointmentRows = (appts as Appointment[]) ?? [];
+    const { data: appointmentServices } = appointmentRows.length
+      ? await supabase
+          .from("appointment_services")
+          .select("appointment_id, service_id")
+          .in("appointment_id", appointmentRows.map((appointment) => appointment.id))
+      : { data: [] };
+    const serviceNames = new Map((svcs ?? []).map((service) => [service.id, service.name]));
+    const serviceIdsByAppointment = new Map<string, string[]>();
+    for (const row of appointmentServices ?? []) {
+      const ids = serviceIdsByAppointment.get(row.appointment_id) ?? [];
+      ids.push(row.service_id);
+      serviceIdsByAppointment.set(row.appointment_id, ids);
+    }
+    setAppointments(appointmentRows.map((appointment) => {
+      const serviceIds = serviceIdsByAppointment.get(appointment.id)
+        ?? (appointment.service_id ? [appointment.service_id] : []);
+      return {
+        ...appointment,
+        services: serviceIds.flatMap((id) => {
+          const name = serviceNames.get(id);
+          return name ? [name] : [];
+        }),
+      };
+    }));
     setPatients((pts as Patient[]) ?? []);
     setStaff((stf as Staff[]) ?? []);
     setServices((svcs as ServiceOption[]) ?? []);
@@ -166,7 +188,7 @@ export default function AppointmentsPage() {
                   {a.patients?.full_name ?? "—"}
                 </td>
                 <td className="px-4 py-3">{a.staff?.full_name ?? "—"}</td>
-                <td className="px-4 py-3 text-gray-500">{a.services?.name ?? "—"}</td>
+                <td className="px-4 py-3 text-gray-500">{a.services?.join(", ") || "—"}</td>
                 <td className="px-4 py-3 text-gray-500">{a.reason ?? "—"}</td>
                 <td className="px-4 py-3">
                   <span
@@ -203,7 +225,7 @@ export default function AppointmentsPage() {
               <div className="text-sm text-gray-500">{new Date(a.scheduled_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</div>
             </div>
             <div className="text-sm text-gray-500 mt-2">Staff: {a.staff?.full_name ?? '—'}</div>
-            <div className="text-sm text-gray-500 mt-2">Service: {a.services?.name ?? '—'}</div>
+            <div className="text-sm text-gray-500 mt-2">Services: {a.services?.join(", ") || '—'}</div>
             <div className="text-sm text-gray-500 mt-2">Reason: {a.reason ?? '—'}</div>
             <div className="mt-3 flex items-center justify-between">
               <span className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${STATUS_STYLES[a.status]}`}>{a.status}</span>
@@ -255,28 +277,39 @@ function BookAppointmentModal({
 }) {
   const [patientId, setPatientId] = useState("");
   const [staffId, setStaffId] = useState("");
-  const [serviceId, setServiceId] = useState("");
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    if (!patientId || !staffId || !serviceId || !scheduledAt) {
-      setError("Patient, staff, service, and date/time are required.");
+    if (!patientId || !staffId || serviceIds.length === 0 || !scheduledAt) {
+      setError("Patient, staff, at least one service, and date/time are required.");
       return;
     }
     setSaving(true);
     setError(null);
-    const { error: insertError } = await supabase.from("appointments").insert({
+    const { data: appointment, error: insertError } = await supabase.from("appointments").insert({
       patient_id: patientId,
       staff_id: staffId,
-      service_id: serviceId,
+      service_id: serviceIds[0],
       scheduled_at: new Date(scheduledAt).toISOString(),
       reason: reason || null,
       status: "pending",
       location_id: locationId,
-    });
+    }).select("id").single();
+    if (!insertError && appointment) {
+      const { error: servicesError } = await supabase.from("appointment_services").insert(
+        serviceIds.map((serviceId) => ({ appointment_id: appointment.id, service_id: serviceId }))
+      );
+      if (servicesError) {
+        await supabase.from("appointments").delete().eq("id", appointment.id);
+        setSaving(false);
+        setError(servicesError.message);
+        return;
+      }
+    }
     setSaving(false);
     if (insertError) {
       setError(insertError.message);
@@ -287,7 +320,7 @@ function BookAppointmentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-6">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">
           Book Appointment
         </h2>
@@ -328,17 +361,25 @@ function BookAppointmentModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Service</label>
-            <select
-              value={serviceId}
-              onChange={(e) => setServiceId(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-            >
-              <option value="">Select service</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.category} — {s.name}</option>
-              ))}
-            </select>
+            <fieldset>
+              <legend className="mb-1 block text-sm font-medium text-gray-700">Services</legend>
+              <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                {services.map((service) => (
+                  <label key={service.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md px-2 py-1 text-sm text-gray-700 hover:bg-orange-50">
+                    <input
+                      type="checkbox"
+                      checked={serviceIds.includes(service.id)}
+                      onChange={(event) => setServiceIds((current) => event.target.checked
+                        ? [...current, service.id]
+                        : current.filter((id) => id !== service.id))}
+                      className="size-4 accent-orange-600"
+                    />
+                    <span>{service.category} — {service.name}</span>
+                  </label>
+                ))}
+                {services.length === 0 && <p className="px-2 py-2 text-sm text-gray-500">No services available.</p>}
+              </div>
+            </fieldset>
           </div>
 
           <div>

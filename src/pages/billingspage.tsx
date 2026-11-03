@@ -218,7 +218,7 @@ export default function BillingPage() {
           </p>
           {exportError && <p className="text-sm text-red-600 mt-1">Could not export bills: {exportError}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <button
             type="button"
             onClick={() => void exportBills()}
@@ -238,7 +238,53 @@ export default function BillingPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-[var(--color-border-soft)] overflow-hidden">
+      <div className="space-y-3 sm:hidden">
+        {!loading && invoices.length === 0 && (
+          <div className="rounded-xl border border-[var(--color-border-soft)] bg-white p-5 text-center text-sm text-slate-muted">
+            No bills yet. Create the first one to get started.
+          </div>
+        )}
+        {invoices.map((invoice) => (
+          <article key={invoice.id} className="overflow-hidden rounded-xl border border-[var(--color-border-soft)] bg-white">
+            <button
+              type="button"
+              onClick={() => setExpandedId(expandedId === invoice.id ? null : invoice.id)}
+              aria-expanded={expandedId === invoice.id}
+              className="w-full p-4 text-left"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-text">{invoice.patients?.full_name ?? '—'}</p>
+                  <p className="mt-1 text-sm text-slate-muted">{new Date(invoice.created_at).toLocaleDateString()}</p>
+                </div>
+                {expandedId === invoice.id ? <ChevronDown size={18} className="mt-1 shrink-0 text-slate-muted" /> : <ChevronRight size={18} className="mt-1 shrink-0 text-slate-muted" />}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
+                <div>
+                  <p className="text-xs text-slate-muted">Total</p>
+                  <p className="mt-0.5 font-medium text-slate-text">{formatNaira(invoice.subtotal)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-muted">Paid</p>
+                  <p className="mt-0.5 text-slate-text">{formatNaira(invoice.amount_paid)}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[invoice.status]}`}>
+                    {STATUS_LABELS[invoice.status]}
+                  </span>
+                </div>
+              </div>
+            </button>
+            {expandedId === invoice.id && (
+              <div className="border-t border-[var(--color-border-soft)] bg-gray-50 p-4">
+                <InvoiceDetail invoice={invoice} onChanged={fetchInvoices} />
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-[var(--color-border-soft)] bg-white sm:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border-soft)] text-left text-slate-muted">
@@ -357,7 +403,8 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
 
   return (
     <div className="space-y-4">
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[32rem] text-sm">
         <thead>
           <tr className="text-left text-slate-muted">
             <th className="pb-2 font-medium">Item</th>
@@ -377,6 +424,7 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
           ))}
         </tbody>
       </table>
+      </div>
 
       {payments.length > 0 && (
         <div>

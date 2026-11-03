@@ -35,10 +35,10 @@ export default function PatientProfile() {
         Back to patients
       </button>
 
-      <div className="grid grid-cols-[280px_1fr] gap-6 items-start">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-6">
         <PatientCard patient={patient} />
 
-        <div>
+        <div className="min-w-0">
           <div className="flex gap-1 border-b border-[var(--color-border-soft)] mb-5">
             <TabButton active={tab === 'info'} onClick={() => setTab('info')}>
               Personal Info
@@ -101,7 +101,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+      className={`flex-1 whitespace-normal px-2 py-2.5 text-center text-sm font-medium border-b-2 -mb-px transition-colors sm:flex-none sm:px-4 ${
         active
           ? 'border-[var(--color-clinic-orange)] text-slate-text'
           : 'border-transparent text-slate-muted hover:text-slate-text'
@@ -149,11 +149,11 @@ function PersonalInfoForm({
   }
 
   const fieldClass =
-    'w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]'
+    'w-full min-w-0 rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]'
 
   return (
-    <div className="bg-white border border-[var(--color-border-soft)] rounded-xl p-6">
-      <div className="grid grid-cols-2 gap-4">
+    <div className="min-w-0 rounded-xl border border-[var(--color-border-soft)] bg-white p-4 sm:p-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field label="Full name">
           <input className={fieldClass} value={form.full_name} onChange={(e) => set('full_name', e.target.value)} />
         </Field>
@@ -178,7 +178,7 @@ function PersonalInfoForm({
         <Field label="Emergency contact phone">
           <input className={fieldClass} value={form.emergency_contact_phone ?? ''} onChange={(e) => set('emergency_contact_phone', e.target.value)} />
         </Field>
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <Field label="Medical notes">
             <textarea rows={3} className={fieldClass} value={form.medical_notes ?? ''} onChange={(e) => set('medical_notes', e.target.value)} />
           </Field>
