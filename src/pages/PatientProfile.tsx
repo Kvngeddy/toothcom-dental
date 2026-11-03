@@ -69,6 +69,7 @@ function PatientCard({ patient }: { patient: Patient }) {
         {patient.date_of_birth ? `DOB ${patient.date_of_birth}` : 'DOB not on file'}
       </p>
       <dl className="space-y-2 text-sm">
+        <Row label="Electronic case note number" value={patient.electronic_case_note_number} />
         <Row label="Paper case note number" value={patient.case_note_number} />
         <Row label="Phone" value={patient.phone} />
         <Row label="Email" value={patient.email} />

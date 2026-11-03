@@ -14,6 +14,7 @@ export interface Patient {
   id: string
   location_id: string | null
   case_note_number: string | null
+  electronic_case_note_number: string | null
   full_name: string
   date_of_birth: string | null
   gender: string | null

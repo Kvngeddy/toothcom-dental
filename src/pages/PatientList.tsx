@@ -79,7 +79,8 @@ export default function PatientList() {
           <thead>
             <tr className="border-b border-[var(--color-border-soft)] text-left text-slate-muted">
               <th className="px-5 py-3 font-medium">Name</th>
-              <th className="px-5 py-3 font-medium">Case note no.</th>
+              <th className="px-5 py-3 font-medium">Electronic case no.</th>
+              <th className="px-5 py-3 font-medium">Paper case no.</th>
               <th className="px-5 py-3 font-medium">Clinic</th>
               <th className="px-5 py-3 font-medium">Phone</th>
               <th className="px-5 py-3 font-medium">Date of birth</th>
@@ -89,7 +90,7 @@ export default function PatientList() {
           <tbody>
             {!loading && patients.length === 0 && (
               <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-muted">
+                  <td colSpan={7} className="px-5 py-10 text-center text-slate-muted">
                   No patients yet. Add the first one to get started.
                 </td>
               </tr>
@@ -101,6 +102,7 @@ export default function PatientList() {
                 className="border-b border-[var(--color-border-soft)] last:border-0 hover:bg-[var(--color-clinic-orange-tint)] cursor-pointer transition-colors"
               >
                 <td className="px-5 py-3 font-medium text-slate-text">{p.full_name}</td>
+                <td className="px-5 py-3 font-medium text-slate-text">{p.electronic_case_note_number ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{p.case_note_number ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{locations.find((location) => location.id === p.location_id)?.name ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{p.phone ?? '—'}</td>
@@ -131,7 +133,8 @@ export default function PatientList() {
               <div className="font-medium text-slate-text">{p.full_name}</div>
               <div className="text-sm text-slate-muted">{new Date(p.created_at).toLocaleDateString()}</div>
             </div>
-            <div className="text-sm text-slate-muted mt-2">Case note no.: {p.case_note_number ?? '—'}</div>
+            <div className="mt-2 text-sm font-medium text-slate-text">Electronic case no.: {p.electronic_case_note_number ?? '—'}</div>
+            <div className="mt-1 text-sm text-slate-muted">Paper case no.: {p.case_note_number ?? '—'}</div>
             <div className="text-sm text-slate-muted mt-2">Clinic: {locations.find((location) => location.id === p.location_id)?.name ?? '—'}</div>
             <div className="text-sm text-slate-muted mt-2">{p.phone ?? '—'}</div>
             <div className="text-sm text-slate-muted mt-2">DOB: {p.date_of_birth ?? '—'}</div>
@@ -247,8 +250,8 @@ function ImportPatientsModal({
         ]),
       ) as Record<keyof ImportRow, number>
 
-      if (columns.full_name < 0 || columns.case_note_number < 0) {
-        setError('Required columns are Full name and Paper case note number.')
+      if (columns.full_name < 0) {
+        setError('The spreadsheet must include a Full name column. Paper case note number is optional.')
         return
       }
 
@@ -280,7 +283,7 @@ function ImportPatientsModal({
     if (normalizedNumber && seenNumbers.has(normalizedNumber)) duplicateNumbers.add(normalizedNumber)
     if (normalizedNumber) seenNumbers.add(normalizedNumber)
   }
-  const invalidCount = rows.filter((row) => !row.full_name || !row.case_note_number).length
+  const invalidCount = rows.filter((row) => !row.full_name).length
   const duplicateCount = rows.filter((row) => duplicateNumbers.has(row.case_note_number.trim().toLowerCase())).length
   const canImport = rows.length > 0 && invalidCount === 0 && duplicateCount === 0 && !!targetLocationId
 
@@ -290,6 +293,7 @@ function ImportPatientsModal({
     setError(null)
     const { error: insertError } = await createPatients(rows.map((row) => ({
       ...row,
+      case_note_number: row.case_note_number.trim() || null,
       created_by: staff?.id ?? null,
       location_id: targetLocationId,
     })))
@@ -336,7 +340,7 @@ function ImportPatientsModal({
         </label>
 
         <p className="text-xs text-slate-muted mt-3">
-          Required columns: Full name, Paper case note number. Optional: Date of birth, Phone, Email, Address, Gender.
+          Required: Full name. Optional: Paper case note number, Date of birth, Phone, Email, Address, Gender. Electronic case numbers are generated automatically.
         </p>
 
         {rows.length > 0 && (
@@ -360,7 +364,7 @@ function ImportPatientsModal({
                   {rows.map((row, index) => (
                     <tr key={`${index}-${row.case_note_number}`} className="border-t border-[var(--color-border-soft)]">
                       <td className="px-3 py-2">{row.full_name || <span className="text-red-600">Missing</span>}</td>
-                      <td className="px-3 py-2">{row.case_note_number || <span className="text-red-600">Missing</span>}</td>
+                      <td className="px-3 py-2">{row.case_note_number || '—'}</td>
                       <td className="px-3 py-2">{row.date_of_birth ?? '—'}</td>
                       <td className="px-3 py-2">{row.phone ?? '—'}</td>
                     </tr>
@@ -406,10 +410,6 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
       setError('Full name is required.')
       return
     }
-    if (!caseNoteNumber.trim()) {
-      setError('Paper case note number is required.')
-      return
-    }
     if (!targetLocationId) {
       setError('Choose a clinic location.')
       return
@@ -417,7 +417,7 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
     setSubmitting(true)
     const { error } = await createPatient({
       full_name: fullName.trim(),
-      case_note_number: caseNoteNumber.trim(),
+      case_note_number: caseNoteNumber.trim() || null,
       date_of_birth: dob || null,
       phone: phone || null,
       created_by: staff?.id ?? null,
@@ -426,8 +426,8 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
     setSubmitting(false)
     if (error) {
       const message = error.message.toLowerCase()
-      if (message.includes('case_note_number') && (message.includes('schema cache') || message.includes('column'))) {
-        setError('The database is missing the paper case note number field. Apply supabase/migrations/0005_patient_case_note_number.sql, then try again.')
+      if ((message.includes('case_note_number') || message.includes('electronic_case_note_number')) && (message.includes('schema cache') || message.includes('column'))) {
+        setError('The database is missing a patient case number field. Apply migrations 0005_patient_case_note_number.sql and 0008_patient_electronic_case_note_number.sql, then refresh the Supabase schema cache.')
       } else if (message.includes('patients_location_case_note_number_uidx')) {
         setError('A paper case note number already exists for this clinic.')
       } else {
@@ -456,11 +456,10 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Paper case note number</label>
+            <label className="block text-sm font-medium mb-1">Paper case note number <span className="font-normal text-slate-muted">(optional)</span></label>
             <input
               value={caseNoteNumber}
               onChange={(e) => setCaseNoteNumber(e.target.value)}
-              required
               autoComplete="off"
               className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
             />
