@@ -60,7 +60,7 @@ export default function SetPassword() {
     await supabase.rpc('mark_staff_active')
 
     setPageState('success')
-    setTimeout(() => navigate('/staff'), 1800)
+    setTimeout(() => navigate('/patients'), 1800)
   }
 
   return (

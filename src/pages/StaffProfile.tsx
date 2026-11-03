@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, Save, ShieldCheck, UserCircle } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
@@ -21,6 +21,12 @@ export default function StaffProfile() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [passwordSaving, setPasswordSaving] = useState(false)
 
   const selectedId = id ?? currentStaff?.id ?? null
   const canEdit = !!selectedId && !!currentStaff && (isAdmin || currentStaff.id === selectedId)
@@ -121,6 +127,50 @@ export default function StaffProfile() {
     }
   }
 
+  async function handlePasswordChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!staff) return
+    setPasswordError(null)
+    setPasswordSaved(false)
+
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords don't match.")
+      return
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError('Choose a new password different from your current password.')
+      return
+    }
+
+    setPasswordSaving(true)
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: staff.email,
+      password: currentPassword,
+    })
+
+    if (verifyError) {
+      setPasswordError('Current password is incorrect.')
+      setPasswordSaving(false)
+      return
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+    setPasswordSaving(false)
+    if (updateError) {
+      setPasswordError(updateError.message)
+      return
+    }
+
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordSaved(true)
+  }
+
   return (
     <div>
       <button
@@ -209,6 +259,59 @@ export default function StaffProfile() {
           </div>
         </section>
       </div>
+
+      {isOwnProfile && (
+        <section className="mt-6 rounded-2xl border border-[var(--color-border-soft)] bg-white p-5 sm:p-6">
+          <div className="mb-1 flex items-center gap-2 text-slate-text">
+            <ShieldCheck size={18} className="text-[var(--color-clinic-orange)]" />
+            <h2 className="text-lg font-semibold">Update password</h2>
+          </div>
+          <p className="mb-5 text-sm text-slate-muted">Verify your current password before choosing a new one.</p>
+          <form onSubmit={handlePasswordChange} className="max-w-xl space-y-4">
+            <Field label="Current password">
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+              />
+            </Field>
+            <Field label="New password">
+              <input
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+              />
+            </Field>
+            <Field label="Confirm new password">
+              <input
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+              />
+            </Field>
+            {passwordError && <p role="alert" className="text-sm text-red-600">{passwordError}</p>}
+            {passwordSaved && <p role="status" className="text-sm text-green-600">Password updated. Use the new password next time you sign in.</p>}
+            <button
+              type="submit"
+              disabled={passwordSaving}
+              className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-clinic-orange)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-clinic-orange-dark)] disabled:opacity-60"
+            >
+              {passwordSaving ? 'Updating password…' : 'Update password'}
+            </button>
+          </form>
+        </section>
+      )}
     </div>
   )
 }

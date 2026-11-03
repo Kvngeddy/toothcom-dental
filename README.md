@@ -31,7 +31,8 @@ npm run dev
   back to the SPA entry point. Intake links are built from the current browser origin, so links
   generated in production use the deployed site URL rather than a local development address.
 5. In Supabase, open **Authentication → URL Configuration**. Set **Site URL** to the production
-  URL and add the production URL and any Vercel Preview URLs you use to **Redirect URLs**.
+  URL and add the production URL, its `/set-password` route, and any Vercel Preview URLs you use
+  to **Redirect URLs**.
 6. Replace the example origin in `supabase/cors.json` with the production website origin, then
   apply the updated policy to the Google Cloud Storage bucket using the command in the next
   section. Include a separate origin if you use a custom domain.
@@ -41,7 +42,8 @@ npm run dev
 1. Create a project at supabase.com.
 2. In the SQL editor, run the files in `supabase/migrations` in numeric order. The later
   migrations add location support, patient case note numbers, intake case notes, and
-  multi-service appointments, and generated electronic patient numbers. Paper case note numbers
+  multi-service appointments, generated electronic patient numbers, and staff invite roles/status.
+  Paper case note numbers
   are optional; electronic numbers are generated in `T/000001` format. If the app reports that
   a patient case number field is missing from the schema cache, confirm that
   `0005_patient_case_note_number.sql` and `0008_patient_electronic_case_note_number.sql` have been
@@ -59,6 +61,7 @@ npm run dev
    supabase functions deploy generate-read-url
    supabase functions deploy invite-staff
    ```
+  Staff invitation emails return to `/set-password` so the invited person can choose a password.
 5. Set the required secrets (see GCP setup below):
    ```bash
    supabase secrets set GCS_SERVICE_ACCOUNT_KEY="$(cat path/to/service-account-key.json)"
