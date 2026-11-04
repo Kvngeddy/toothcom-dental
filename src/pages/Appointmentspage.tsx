@@ -29,6 +29,14 @@ const STATUS_STYLES: Record<AppointmentStatus, string> = {
   cancelled: "bg-red-100 text-red-700",
 };
 
+function localDateKey(value: string) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function AppointmentsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedLocationId } = useLocation();
@@ -37,6 +45,8 @@ export default function AppointmentsPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [showBookModal, setShowBookModal] = useState(false);
   const [statusEditId, setStatusEditId] = useState<string | null>(null);
@@ -120,9 +130,15 @@ export default function AppointmentsPage() {
     setStatusEditId(null);
   }
 
-  const filtered = appointments.filter((a) =>
-    a.patients?.full_name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = appointments.filter((appointment) => {
+    const patientMatches = (appointment.patients?.full_name ?? "")
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+    const appointmentDate = localDateKey(appointment.scheduled_at);
+    return patientMatches
+      && (!dateFrom || appointmentDate >= dateFrom)
+      && (!dateTo || appointmentDate <= dateTo);
+  });
 
   return (
     <div>
@@ -140,13 +156,50 @@ export default function AppointmentsPage() {
         {appointments.length} appointment{appointments.length !== 1 && "s"} scheduled
       </p>
 
-      <input
-        type="text"
-        placeholder="Search appointments by patient..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full mb-4 rounded-lg border border-gray-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
-      />
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(16rem,1fr)_repeat(2,minmax(10rem,12rem))_auto] md:items-end">
+        <div>
+          <label htmlFor="appointment-patient-search" className="mb-1 block text-xs font-medium text-gray-600">Patient</label>
+          <input
+            id="appointment-patient-search"
+            type="search"
+            placeholder="Search by patient name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+          />
+        </div>
+        <div>
+          <label htmlFor="appointment-date-from" className="mb-1 block text-xs font-medium text-gray-600">From date</label>
+          <input
+            id="appointment-date-from"
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+          />
+        </div>
+        <div>
+          <label htmlFor="appointment-date-to" className="mb-1 block text-xs font-medium text-gray-600">To date</label>
+          <input
+            id="appointment-date-to"
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+            }}
+            className="min-h-10 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+          >
+            Clear dates
+          </button>
+        )}
+      </div>
 
       <div className="hidden md:block overflow-hidden rounded-lg border border-gray-200">
         <table className="w-full text-sm">

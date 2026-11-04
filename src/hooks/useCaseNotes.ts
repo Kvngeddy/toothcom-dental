@@ -31,10 +31,18 @@ export async function createCaseNote(input: {
   title: string
   note_date?: string | null
   category?: string | null
+  staff_note?: string | null
   created_by: string
 }) {
   const { data, error } = await supabase.from('case_notes').insert(input).select().single()
   return { data: data as CaseNote | null, error }
+}
+
+export async function updateCaseNoteStaffNote(caseNoteId: string, staffNote: string) {
+  return supabase
+    .from('case_notes')
+    .update({ staff_note: staffNote.trim() || null })
+    .eq('id', caseNoteId)
 }
 
 export async function fetchCaseNotePages(caseNoteId: string) {

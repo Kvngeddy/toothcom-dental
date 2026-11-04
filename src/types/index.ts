@@ -36,6 +36,7 @@ export interface CaseNote {
   title: string
   note_date: string | null
   category: string | null
+  staff_note: string | null
   page_count: number
   created_by: string | null
   created_at: string
