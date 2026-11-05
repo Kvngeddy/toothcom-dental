@@ -42,7 +42,10 @@ npm run dev
 1. Create a project at supabase.com.
 2. In the SQL editor, run the files in `supabase/migrations` in numeric order. The later
   migrations add location support, patient case note numbers, intake case notes, and
-  multi-service appointments, generated electronic patient numbers, and staff invite roles/status.
+  multi-service appointments, generated electronic patient numbers, staff invite roles/status,
+  and multiple doctor notes per case note. Migration `0011_case_note_doctor_notes.sql` also
+  preserves existing internal staff notes when upgrading. If the app reports a missing database
+  column or relation, apply the migrations and refresh the Supabase API schema cache or wait for it to reload.
   Paper case note numbers
   are optional; electronic numbers are generated in `T/000001` format. If the app reports that
   a patient case number field is missing from the schema cache, confirm that

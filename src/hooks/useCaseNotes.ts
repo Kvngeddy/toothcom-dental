@@ -15,7 +15,20 @@ export function useCaseNotes(patientId: string) {
       .select('*')
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false })
-    if (!error && data) setCaseNotes(data as CaseNote[])
+    if (!error && data) {
+      const noteIds = data.map((note) => note.id)
+      const { data: doctorNotes } = noteIds.length > 0
+        ? await supabase
+            .from('case_note_doctor_notes')
+            .select('*')
+            .in('case_note_id', noteIds)
+            .order('created_at', { ascending: true })
+        : { data: [] }
+      setCaseNotes(data.map((note) => ({
+        ...note,
+        doctor_notes: (doctorNotes ?? []).filter((doctorNote) => doctorNote.case_note_id === note.id),
+      })) as CaseNote[])
+    }
     setLoading(false)
   }, [patientId])
 
@@ -31,18 +44,16 @@ export async function createCaseNote(input: {
   title: string
   note_date?: string | null
   category?: string | null
-  staff_note?: string | null
   created_by: string
 }) {
   const { data, error } = await supabase.from('case_notes').insert(input).select().single()
   return { data: data as CaseNote | null, error }
 }
 
-export async function updateCaseNoteStaffNote(caseNoteId: string, staffNote: string) {
+export async function addCaseNoteDoctorNote(caseNoteId: string, note: string, createdBy: string | null) {
   return supabase
-    .from('case_notes')
-    .update({ staff_note: staffNote.trim() || null })
-    .eq('id', caseNoteId)
+    .from('case_note_doctor_notes')
+    .insert({ case_note_id: caseNoteId, note: note.trim(), created_by: createdBy })
 }
 
 export async function fetchCaseNotePages(caseNoteId: string) {

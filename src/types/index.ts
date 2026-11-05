@@ -36,11 +36,19 @@ export interface CaseNote {
   title: string
   note_date: string | null
   category: string | null
-  staff_note: string | null
   page_count: number
   created_by: string | null
   created_at: string
   updated_at: string
+  doctor_notes?: CaseNoteDoctorNote[]
+}
+
+export interface CaseNoteDoctorNote {
+  id: string
+  case_note_id: string
+  note: string
+  created_by: string | null
+  created_at: string
 }
 
 export interface CaseNotePage {

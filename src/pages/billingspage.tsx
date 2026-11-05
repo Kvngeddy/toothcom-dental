@@ -416,7 +416,7 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
         <tbody>
           {items.map((item) => (
             <tr key={item.id} className="border-t border-[var(--color-border-soft)]">
-              <td className="py-2 text-slate-text">{item.description}</td>
+              <td className="min-w-0 break-words py-2 text-slate-text">{item.description}</td>
               <td className="py-2 text-right text-slate-muted">{item.quantity}</td>
               <td className="py-2 text-right text-slate-muted">{formatNaira(item.unit_price)}</td>
               <td className="py-2 text-right text-slate-text">{formatNaira(item.line_total)}</td>
@@ -823,11 +823,11 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
             <div className="space-y-3">
               {lines.map((line) => (
                 <div key={line.key} className="border border-[var(--color-border-soft)] rounded-lg p-3">
-                  <div className="flex items-start gap-2">
+                  <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_4rem_7rem_auto]">
                     <select
                       value={line.serviceId}
                       onChange={(e) => selectService(line.key, e.target.value)}
-                      className="flex-1 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+                      className="col-span-2 w-full min-w-0 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)] sm:col-span-1"
                     >
                       <option value="">Select a service…</option>
                       {services.map((s) => (
@@ -836,26 +836,30 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
                         </option>
                       ))}
                     </select>
-                    <input
-                      type="number"
-                      value={line.quantity}
-                      onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                      title="Quantity"
-                      className="w-16 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
-                    />
-                    <input
-                      type="number"
-                      value={line.unitPrice}
-                      onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
-                      placeholder="Price"
-                      className="w-28 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
-                    />
-                    <button
-                      onClick={() => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== line.key) : prev))}
-                      className="text-slate-muted hover:text-red-600 p-1.5"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    <div className="col-span-2 grid grid-cols-[4rem_minmax(0,1fr)_auto] gap-2 sm:contents">
+                      <input
+                        type="number"
+                        value={line.quantity}
+                        onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                        title="Quantity"
+                        className="w-full min-w-0 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-center text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+                      />
+                      <input
+                        type="number"
+                        value={line.unitPrice}
+                        onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
+                        placeholder="Price"
+                        className="w-full min-w-0 rounded-lg border border-[var(--color-border-soft)] px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== line.key) : prev))}
+                        aria-label="Remove line item"
+                        className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-muted hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                   {line.priceType === 'variable' && (
                     <p className="text-xs text-slate-muted mt-1.5 pl-1">
