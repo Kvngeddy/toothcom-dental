@@ -17,7 +17,16 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return
+
+  const url = new URL(event.request.url)
+  const isAppShell = url.pathname === '/' || url.pathname === '/index.html'
+  const isStaticAsset = url.pathname === '/manifest.webmanifest'
+    || url.pathname === '/favicon.svg'
+    || url.pathname === '/icon-192.png'
+    || url.pathname === '/icon-512.png'
+    || url.pathname.startsWith('/assets/')
+  if (!isAppShell && !isStaticAsset) return
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -25,7 +34,7 @@ self.addEventListener('fetch', (event) => {
 
       return fetch(event.request)
         .then((response) => {
-          if (response && response.status === 200 && event.request.url.startsWith(self.location.origin)) {
+          if (response && response.status === 200) {
             const clone = response.clone()
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
           }

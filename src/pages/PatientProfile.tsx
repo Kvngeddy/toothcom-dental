@@ -1,29 +1,93 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, Save } from 'lucide-react'
+import { ArrowLeft, User, Save, Download } from 'lucide-react'
 import { getPatient, updatePatient } from '@/hooks/usePatients'
 import type { Patient } from '@/types'
 import CaseNotesTab from '@/components/CaseNotesTab'
+import MobileInstallButton from '@/components/MobileInstallButton'
+import { supabase } from '@/lib/supabaseClient'
+import { useInstallApp } from '@/contexts/InstallContext'
 
 type Tab = 'info' | 'notes'
+type IntakeRegistration = Record<string, unknown>
+type DoctorNote = { id: string; note: string; created_by: string | null; created_at: string }
 
 export default function PatientProfile() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [patient, setPatient] = useState<Patient | null>(null)
+  const [registration, setRegistration] = useState<IntakeRegistration | null>(null)
+  const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([])
   const [tab, setTab] = useState<Tab>('info')
   const [loading, setLoading] = useState(true)
+  const { canInstall, isInstalled, install } = useInstallApp()
 
   useEffect(() => {
     if (!id) return
-    getPatient(id).then(({ data }) => {
-      setPatient(data)
+    const patientId = id
+    let active = true
+
+    async function loadProfile() {
+      const [{ data: patientData }, { data: caseNotes }] = await Promise.all([
+        getPatient(patientId),
+        supabase
+          .from('case_notes')
+          .select('id, intake_submission_id, created_at')
+          .eq('patient_id', patientId)
+          .not('intake_submission_id', 'is', null)
+          .order('created_at', { ascending: false }),
+      ])
+      if (!active) return
+
+      const intakeCaseNotes = caseNotes ?? []
+      const latestIntakeCaseNote = intakeCaseNotes[0]
+      if (latestIntakeCaseNote?.intake_submission_id) {
+        const [{ data: submission }, { data: notes }] = await Promise.all([
+          supabase
+            .from('patient_intake_submissions')
+            .select('registration')
+            .eq('id', latestIntakeCaseNote.intake_submission_id)
+            .maybeSingle(),
+          supabase
+            .from('case_note_doctor_notes')
+            .select('id, note, created_by, created_at')
+            .in('case_note_id', intakeCaseNotes.map((caseNote) => caseNote.id))
+            .order('created_at', { ascending: true }),
+        ])
+        if (!active) return
+        setRegistration((submission?.registration as IntakeRegistration | null) ?? null)
+        setDoctorNotes((notes as DoctorNote[] | null) ?? [])
+      }
+      setPatient(patientData)
       setLoading(false)
-    })
+    }
+
+    void loadProfile()
+    return () => { active = false }
   }, [id])
 
   if (loading) return <p className="text-slate-muted">Loading patient…</p>
   if (!patient) return <p className="text-slate-muted">Patient not found.</p>
+
+  const intakeValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = registration?.[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+    }
+    return null
+  }
+  const profilePatient: Patient = {
+    ...patient,
+    gender: patient.gender || intakeValue('sex'),
+    phone: patient.phone || intakeValue('whatsappNo', 'officePhone'),
+    email: patient.email || intakeValue('email'),
+    address: patient.address || intakeValue('homeAddress'),
+    emergency_contact_name: patient.emergency_contact_name || intakeValue('nextOfKinName'),
+    emergency_contact_phone: patient.emergency_contact_phone || intakeValue('nextOfKinPhone'),
+    medical_notes: doctorNotes.length
+      ? doctorNotes.map((note) => note.note).join('\n\n')
+      : patient.medical_notes,
+  }
 
   return (
     <div>
@@ -36,9 +100,21 @@ export default function PatientProfile() {
       </button>
 
       <div className="grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-[280px_minmax(0,1fr)] md:gap-6">
-        <PatientCard patient={patient} />
+        <PatientCard patient={profilePatient} />
 
         <div className="min-w-0">
+          <div className="mb-4 flex justify-end">
+            <MobileInstallButton />
+            {canInstall && !isInstalled && (
+              <button
+                type="button"
+                onClick={() => void install()}
+                className="hidden items-center gap-2 rounded-lg bg-[var(--color-clinic-orange)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--color-clinic-orange-dark)] md:inline-flex"
+              >
+                <Download size={16} /> Install app
+              </button>
+            )}
+          </div>
           <div className="flex gap-1 border-b border-[var(--color-border-soft)] mb-5">
             <TabButton active={tab === 'info'} onClick={() => setTab('info')}>
               Personal Info
@@ -49,7 +125,39 @@ export default function PatientProfile() {
           </div>
 
           {tab === 'info' && (
-            <PersonalInfoForm patient={patient} onSaved={setPatient} />
+            <>
+              <PersonalInfoForm
+                key={patient.id}
+                patient={profilePatient}
+                onSaved={setPatient}
+                medicalNotesFromDoctorNotes={doctorNotes.length > 0}
+              />
+              {registration && (
+                <section className="mt-5 rounded-xl border border-[var(--color-border-soft)] bg-white p-4 sm:p-6">
+                  <h2 className="font-display text-base font-semibold text-slate-text">Additional intake details</h2>
+                  <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Row label="Occupation" value={intakeValue('occupation')} />
+                    <Row label="Marital status" value={intakeValue('maritalStatus')} />
+                    <Row label="Office address" value={intakeValue('officeAddress')} />
+                    <Row label="Office phone" value={intakeValue('officePhone')} />
+                    <Row label="Next-of-kin address" value={intakeValue('nextOfKinAddress')} />
+                  </dl>
+                </section>
+              )}
+              {doctorNotes.length > 0 && (
+                <section className="mt-5 rounded-xl border border-[var(--color-border-soft)] bg-white p-4 sm:p-6">
+                  <h2 className="font-display text-base font-semibold text-slate-text">Doctor note history</h2>
+                  <div className="mt-3 space-y-3">
+                    {doctorNotes.map((note) => (
+                      <article key={note.id} className="border-t border-[var(--color-border-soft)] pt-3 first:border-0 first:pt-0">
+                        <p className="whitespace-pre-wrap text-sm text-slate-text">{note.note}</p>
+                        <p className="mt-1 text-xs text-slate-muted">{new Date(note.created_at).toLocaleString()}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
           )}
           {tab === 'notes' && <CaseNotesTab patientId={patient.id} />}
         </div>
@@ -116,9 +224,11 @@ function TabButton({
 function PersonalInfoForm({
   patient,
   onSaved,
+  medicalNotesFromDoctorNotes = false,
 }: {
   patient: Patient
   onSaved: (p: Patient) => void
+  medicalNotesFromDoctorNotes?: boolean
 }) {
   const [form, setForm] = useState(patient)
   const [saving, setSaving] = useState(false)
@@ -140,7 +250,7 @@ function PersonalInfoForm({
       address: form.address,
       emergency_contact_name: form.emergency_contact_name,
       emergency_contact_phone: form.emergency_contact_phone,
-      medical_notes: form.medical_notes,
+      ...(!medicalNotesFromDoctorNotes && { medical_notes: form.medical_notes }),
     })
     setSaving(false)
     if (data) {
@@ -180,8 +290,14 @@ function PersonalInfoForm({
           <input className={fieldClass} value={form.emergency_contact_phone ?? ''} onChange={(e) => set('emergency_contact_phone', e.target.value)} />
         </Field>
         <div className="md:col-span-2">
-          <Field label="Medical notes">
-            <textarea rows={3} className={fieldClass} value={form.medical_notes ?? ''} onChange={(e) => set('medical_notes', e.target.value)} />
+          <Field label={medicalNotesFromDoctorNotes ? 'Medical notes (from intake doctor notes)' : 'Medical notes'}>
+            <textarea
+              rows={3}
+              readOnly={medicalNotesFromDoctorNotes}
+              className={`${fieldClass} ${medicalNotesFromDoctorNotes ? 'bg-gray-50' : ''}`}
+              value={form.medical_notes ?? ''}
+              onChange={(e) => set('medical_notes', e.target.value)}
+            />
           </Field>
         </div>
       </div>

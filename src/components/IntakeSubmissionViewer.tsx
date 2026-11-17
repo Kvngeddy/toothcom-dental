@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Download, Loader2, X } from 'lucide-react'
+import { Download, Loader2, X, Plus } from 'lucide-react'
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import { supabase } from '@/lib/supabaseClient'
 import type { IntakePayload } from '@/pages/PatientIntakeForm'
+import { useAuth } from '@/contexts/AuthContext'
 
 type IntakeSubmission = {
   registration: IntakePayload['registration']
@@ -11,6 +12,8 @@ type IntakeSubmission = {
   consent_name: string
   submitted_at: string
 }
+
+type DoctorNote = { id: string; note: string; created_by: string | null; created_at: string }
 
 const sections: { title: string; key: 'registration' | 'medical_history' | 'dental_history' }[] = [
   { title: 'Registration', key: 'registration' },
@@ -42,18 +45,41 @@ export default function IntakeSubmissionViewer({
   const [loading, setLoading] = useState(true)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [caseNoteId, setCaseNoteId] = useState<string | null>(null)
+  const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([])
+  const [doctorNoteDraft, setDoctorNoteDraft] = useState('')
+  const [savingDoctorNote, setSavingDoctorNote] = useState(false)
+  const { staff } = useAuth()
+  const canWriteDoctorNotes = staff?.status === 'active' && (staff.role === 'doctor' || staff.role === 'admin')
 
   useEffect(() => {
     let active = true
 
     async function loadSubmission() {
-      const { data, error: queryError } = await supabase
-        .from('patient_intake_submissions')
-        .select('registration, medical_history, dental_history, consent_name, submitted_at')
-        .eq('id', submissionId)
-        .single()
+      const [{ data, error: queryError }, { data: caseNote }] = await Promise.all([
+        supabase
+          .from('patient_intake_submissions')
+          .select('registration, medical_history, dental_history, consent_name, submitted_at')
+          .eq('id', submissionId)
+          .single(),
+        supabase
+          .from('case_notes')
+          .select('id')
+          .eq('intake_submission_id', submissionId)
+          .maybeSingle(),
+      ])
 
       if (!active) return
+      if (caseNote) {
+        setCaseNoteId(caseNote.id)
+        const { data: notes } = await supabase
+          .from('case_note_doctor_notes')
+          .select('id, note, created_by, created_at')
+          .eq('case_note_id', caseNote.id)
+          .order('created_at', { ascending: true })
+        if (!active) return
+        setDoctorNotes((notes as DoctorNote[] | null) ?? [])
+      }
       if (queryError || !data) {
         setError(queryError?.message ?? 'Could not load this intake submission.')
       } else {
@@ -65,6 +91,24 @@ export default function IntakeSubmissionViewer({
     void loadSubmission()
     return () => { active = false }
   }, [submissionId])
+
+  async function addDoctorNote() {
+    if (!caseNoteId || !staff || !doctorNoteDraft.trim()) return
+    setSavingDoctorNote(true)
+    setError(null)
+    const { data, error: insertError } = await supabase
+      .from('case_note_doctor_notes')
+      .insert({ case_note_id: caseNoteId, note: doctorNoteDraft.trim(), created_by: staff.id })
+      .select('id, note, created_by, created_at')
+      .single()
+    setSavingDoctorNote(false)
+    if (insertError) {
+      setError(insertError.message)
+      return
+    }
+    if (data) setDoctorNotes((notes) => [...notes, data as DoctorNote])
+    setDoctorNoteDraft('')
+  }
 
   async function downloadWordDocument() {
     if (!submission) return
@@ -180,6 +224,41 @@ export default function IntakeSubmissionViewer({
                   <dt className="text-xs text-slate-muted">Patient signature</dt>
                   <dd className="mt-0.5 text-sm text-slate-text">{displayValue(submission.consent_name)}</dd>
                 </dl>
+              </section>
+              <section>
+                <h3 className="mb-3 border-b border-[var(--color-border-soft)] pb-2 text-sm font-semibold text-slate-text">
+                  Doctor notes
+                </h3>
+                {doctorNotes.length === 0 && <p className="text-sm text-slate-muted">No doctor notes recorded.</p>}
+                <div className="space-y-3">
+                  {doctorNotes.map((note) => (
+                    <article key={note.id} className="border-b border-[var(--color-border-soft)] pb-3 last:border-0">
+                      <p className="whitespace-pre-wrap text-sm text-slate-text">{note.note}</p>
+                      <p className="mt-1 text-xs text-slate-muted">{new Date(note.created_at).toLocaleString()}</p>
+                    </article>
+                  ))}
+                </div>
+                {canWriteDoctorNotes && caseNoteId && (
+                  <div className="mt-4 space-y-2">
+                    <label htmlFor="intake-doctor-note" className="block text-xs font-medium text-slate-muted">Add doctor note</label>
+                    <textarea
+                      id="intake-doctor-note"
+                      value={doctorNoteDraft}
+                      onChange={(event) => setDoctorNoteDraft(event.target.value)}
+                      rows={3}
+                      className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void addDoctorNote()}
+                      disabled={savingDoctorNote || !doctorNoteDraft.trim()}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-clinic-orange)] px-3 py-2 text-sm font-medium text-white hover:bg-[var(--color-clinic-orange-dark)] disabled:opacity-50"
+                    >
+                      {savingDoctorNote ? <Loader2 className="animate-spin" size={15} /> : <Plus size={15} />}
+                      Add note
+                    </button>
+                  </div>
+                )}
               </section>
             </div>
           )}
