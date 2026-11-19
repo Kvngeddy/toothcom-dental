@@ -13,7 +13,7 @@ export function usePatients(search: string, locationId: string | null) {
       return
     }
     setLoading(true)
-    let query = supabase.from('patients').select('*').order('full_name', { ascending: true })
+    let query = supabase.from('patients').select('*, hmo_provider:hmo_providers(name)').order('full_name', { ascending: true })
     if (locationId !== 'all') query = query.eq('location_id', locationId)
     if (search.trim()) {
       query = query.ilike('full_name', `%${search.trim()}%`)
@@ -45,12 +45,12 @@ export async function updatePatient(id: string, input: Partial<Patient>) {
     .from('patients')
     .update({ ...input, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
+    .select('*, hmo_provider:hmo_providers(name)')
     .single()
   return { data: data as Patient | null, error }
 }
 
 export async function getPatient(id: string) {
-  const { data, error } = await supabase.from('patients').select('*').eq('id', id).single()
+  const { data, error } = await supabase.from('patients').select('*, hmo_provider:hmo_providers(name)').eq('id', id).single()
   return { data: data as Patient | null, error }
 }

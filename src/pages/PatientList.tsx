@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Plus, X, FileSpreadsheet, Upload } from 'lucide-react'
 import readXlsxFile from 'read-excel-file/browser'
 import { usePatients, createPatient, createPatients } from '@/hooks/usePatients'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocation } from '@/contexts/LocationContext'
+import { supabase } from '@/lib/supabaseClient'
 import type { ClinicLocation } from '@/contexts/LocationContext'
 
 export default function PatientList() {
@@ -81,6 +82,7 @@ export default function PatientList() {
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Electronic case no.</th>
               <th className="px-5 py-3 font-medium">Paper case no.</th>
+              <th className="px-5 py-3 font-medium">Insurance</th>
               <th className="px-5 py-3 font-medium">Clinic</th>
               <th className="px-5 py-3 font-medium">Phone</th>
               <th className="px-5 py-3 font-medium">Date of birth</th>
@@ -90,7 +92,7 @@ export default function PatientList() {
           <tbody>
             {!loading && patients.length === 0 && (
               <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-muted">
                   No patients yet. Add the first one to get started.
                 </td>
               </tr>
@@ -104,6 +106,7 @@ export default function PatientList() {
                 <td className="px-5 py-3 font-medium text-slate-text">{p.full_name}</td>
                 <td className="px-5 py-3 font-medium text-slate-text">{p.electronic_case_note_number ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{p.case_note_number ?? '—'}</td>
+                <td className="px-5 py-3 text-slate-muted">{p.insurance_type === 'hmo' ? p.hmo_provider?.name ?? 'HMO' : 'Non-HMO'}</td>
                 <td className="px-5 py-3 text-slate-muted">{locations.find((location) => location.id === p.location_id)?.name ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{p.phone ?? '—'}</td>
                 <td className="px-5 py-3 text-slate-muted">{p.date_of_birth ?? '—'}</td>
@@ -135,6 +138,7 @@ export default function PatientList() {
             </div>
             <div className="mt-2 text-sm font-medium text-slate-text">Electronic case no.: {p.electronic_case_note_number ?? '—'}</div>
             <div className="mt-1 text-sm text-slate-muted">Paper case no.: {p.case_note_number ?? '—'}</div>
+            <div className="mt-1 text-sm text-slate-muted">Insurance: {p.insurance_type === 'hmo' ? p.hmo_provider?.name ?? 'HMO' : 'Non-HMO'}</div>
             <div className="text-sm text-slate-muted mt-2">Clinic: {locations.find((location) => location.id === p.location_id)?.name ?? '—'}</div>
             <div className="text-sm text-slate-muted mt-2">{p.phone ?? '—'}</div>
             <div className="text-sm text-slate-muted mt-2">DOB: {p.date_of_birth ?? '—'}</div>
@@ -402,8 +406,16 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
   const [targetLocationId, setTargetLocationId] = useState(locationId ?? locations[0]?.id ?? '')
   const [dob, setDob] = useState('')
   const [phone, setPhone] = useState('')
+  const [insuranceType, setInsuranceType] = useState<'hmo' | 'non_hmo'>('non_hmo')
+  const [hmoProviders, setHmoProviders] = useState<{ id: string; name: string }[]>([])
+  const [hmoProviderId, setHmoProviderId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void supabase.from('hmo_providers').select('id, name').eq('is_active', true).order('name')
+      .then(({ data }) => setHmoProviders(data ?? []))
+  }, [])
 
   async function handleSubmit() {
     if (!fullName.trim()) {
@@ -414,12 +426,18 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
       setError('Choose a clinic location.')
       return
     }
+    if (insuranceType === 'hmo' && !hmoProviderId) {
+      setError('Choose an HMO provider.')
+      return
+    }
     setSubmitting(true)
     const { error } = await createPatient({
       full_name: fullName.trim(),
       case_note_number: caseNoteNumber.trim() || null,
       date_of_birth: dob || null,
       phone: phone || null,
+      insurance_type: insuranceType,
+      hmo_provider_id: insuranceType === 'hmo' ? hmoProviderId : null,
       created_by: staff?.id ?? null,
       location_id: targetLocationId,
     })
@@ -464,6 +482,26 @@ function AddPatientModal({ onClose, onCreated, locationId, locations }: { onClos
               className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
             />
           </div>
+          <div>
+            <label htmlFor="new-patient-insurance" className="block text-sm font-medium mb-1">Insurance</label>
+            <select id="new-patient-insurance" value={insuranceType} onChange={(event) => {
+              const nextType = event.target.value as 'hmo' | 'non_hmo'
+              setInsuranceType(nextType)
+              if (nextType === 'non_hmo') setHmoProviderId('')
+            }} className="w-full rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm">
+              <option value="non_hmo">Non-HMO</option>
+              <option value="hmo">HMO</option>
+            </select>
+          </div>
+          {insuranceType === 'hmo' && (
+            <div>
+              <label htmlFor="new-patient-hmo" className="block text-sm font-medium mb-1">HMO provider</label>
+              <select id="new-patient-hmo" value={hmoProviderId} onChange={(event) => setHmoProviderId(event.target.value)} required className="w-full rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm">
+                <option value="">Select an HMO provider</option>
+                {hmoProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label htmlFor="new-patient-location" className="block text-sm font-medium mb-1">Clinic location</label>
             <select

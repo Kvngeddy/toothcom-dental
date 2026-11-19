@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, CalendarClock, CircleDollarSign } from 'lucide-react'
+import { Bell, CalendarClock, CircleDollarSign, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useLocation } from '@/contexts/LocationContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 type ClinicNotification = {
   id: string
   title: string
   detail: string
   href: string
-  kind: 'appointment' | 'billing'
+  kind: 'appointment' | 'billing' | 'download'
 }
 
 function joinedPatientName(value: unknown) {
@@ -22,6 +23,7 @@ function joinedPatientName(value: unknown) {
 
 export default function NotificationBell() {
   const { selectedLocationId } = useLocation()
+  const { staff, isAdmin } = useAuth()
   const navigate = useNavigate()
   const [notifications, setNotifications] = useState<ClinicNotification[]>([])
   const [open, setOpen] = useState(false)
@@ -31,18 +33,19 @@ export default function NotificationBell() {
     let cancelled = false
 
     async function loadNotifications() {
-      if (!selectedLocationId) {
+      if (!selectedLocationId && !isAdmin) {
         setNotifications([])
         return
       }
       setLoading(true)
       const now = new Date()
       const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-      const [{ data: appointmentRows }, { data: invoiceRows }] = await Promise.all([
+      const locationFilter = selectedLocationId
+      const [{ data: appointmentRows }, { data: invoiceRows }, { data: requestRows }] = await Promise.all([
         supabase
           .from('appointments')
           .select('id, scheduled_at, status, patients(full_name)')
-          .eq('location_id', selectedLocationId)
+          .eq('location_id', locationFilter ?? '')
           .in('status', ['pending', 'confirmed'])
           .gte('scheduled_at', now.toISOString())
           .lte('scheduled_at', tomorrow.toISOString())
@@ -51,9 +54,15 @@ export default function NotificationBell() {
         supabase
           .from('invoices')
           .select('id, status, subtotal, amount_paid, patients(full_name)')
-          .eq('location_id', selectedLocationId)
+          .eq('location_id', locationFilter ?? '')
           .in('status', ['unpaid', 'partially_paid'])
           .order('created_at', { ascending: true })
+          .limit(8),
+        supabase
+          .from('download_requests')
+          .select('id, resource_label, resource_type, status, requester_id, created_at, requester:staff!download_requests_requester_id_fkey(full_name)')
+          .in('status', isAdmin ? ['pending'] : ['approved', 'rejected'])
+          .order('created_at', { ascending: false })
           .limit(8),
       ])
 
@@ -77,15 +86,29 @@ export default function NotificationBell() {
           kind: 'billing',
         }
       })
-      setNotifications([...appointments, ...bills].slice(0, 10))
+      const downloadRequests: ClinicNotification[] = (requestRows ?? [])
+        .filter((row) => isAdmin || row.requester_id === staff?.id)
+        .map((row) => {
+          const requester = Array.isArray(row.requester) ? row.requester[0] : row.requester
+          return {
+            id: `download-${row.id}`,
+            title: isAdmin ? `Download approval · ${requester?.full_name ?? 'Staff member'}` : `Download ${row.status}`,
+            detail: row.resource_label,
+            href: isAdmin ? '/download-approvals' : row.resource_type === 'billing_export' || row.resource_type === 'payment_receipt' ? '/billing' : '/patients',
+            kind: 'download',
+          }
+        })
+      setNotifications([...downloadRequests, ...appointments, ...bills].slice(0, 10))
       setLoading(false)
     }
 
     void loadNotifications()
+    const refreshTimer = window.setInterval(() => { void loadNotifications() }, 30000)
     return () => {
       cancelled = true
+      window.clearInterval(refreshTimer)
     }
-  }, [selectedLocationId, open])
+  }, [selectedLocationId, open, isAdmin, staff?.id])
 
   function openNotification(notification: ClinicNotification) {
     setOpen(false)
@@ -129,7 +152,7 @@ export default function NotificationBell() {
                     className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50"
                   >
                     <span className="mt-0.5 text-[var(--color-clinic-orange-dark)]">
-                      {notification.kind === 'appointment' ? <CalendarClock size={16} /> : <CircleDollarSign size={16} />}
+                      {notification.kind === 'appointment' ? <CalendarClock size={16} /> : notification.kind === 'billing' ? <CircleDollarSign size={16} /> : <Download size={16} />}
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-medium text-slate-text">{notification.title}</span>

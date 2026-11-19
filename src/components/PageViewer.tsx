@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { X, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { fetchCaseNotePages, getSignedReadUrl } from '@/hooks/useCaseNotes'
 import type { CaseNotePage } from '@/types'
+import { useAuth } from '@/contexts/AuthContext'
+import { authorizeDownload } from '@/lib/downloadApprovals'
 
 export default function PageViewer({
   caseNoteId,
@@ -16,6 +18,8 @@ export default function PageViewer({
   const [current, setCurrent] = useState(0)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [accessMessage, setAccessMessage] = useState<string | null>(null)
+  const { staff, isAdmin } = useAuth()
 
   useEffect(() => {
     fetchCaseNotePages(caseNoteId).then(({ data }) => {
@@ -27,10 +31,27 @@ export default function PageViewer({
   useEffect(() => {
     if (pages.length === 0) return
     setUrl(null)
-    getSignedReadUrl(pages[current].gcs_object_path).then(({ url }) => {
-      if (url) setUrl(url)
-    })
-  }, [pages, current])
+    let active = true
+    async function loadSignedUrl() {
+      const currentPage = pages[current]
+      const approval = await authorizeDownload({
+        isAdmin,
+        requesterId: staff?.id ?? null,
+        resourceType: 'case_note_page',
+        resourceId: currentPage.id,
+        resourceLabel: `Case note scan · ${title} · page ${current + 1}`,
+      })
+      if (!approval.allowed) {
+        if (active) setAccessMessage(approval.error)
+        return
+      }
+      const { url } = await getSignedReadUrl(currentPage.gcs_object_path)
+      if (active && url) setUrl(url)
+    }
+    setAccessMessage(null)
+    void loadSignedUrl()
+    return () => { active = false }
+  }, [pages, current, isAdmin, staff?.id, title])
 
   const page = pages[current]
   const isPdf = page?.file_type?.includes('pdf')
@@ -56,6 +77,7 @@ export default function PageViewer({
         {!loading && pages.length === 0 && (
           <p className="text-white/60">No pages uploaded for this case note yet.</p>
         )}
+        {!loading && accessMessage && <p role="alert" className="max-w-md text-center text-sm text-white">{accessMessage}</p>}
         {!loading && url && !isPdf && (
           <img src={url} alt={`Page ${current + 1}`} className="max-h-full max-w-full rounded-lg shadow-2xl" />
         )}

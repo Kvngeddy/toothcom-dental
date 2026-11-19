@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutGrid, Users, CalendarClock, Stethoscope, Banknote, ShieldCheck, LogOut } from 'lucide-react'
+import { LayoutGrid, Users, CalendarClock, Stethoscope, Banknote, ShieldCheck, LogOut, Download, HeartHandshake } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
 function getInitials(name: string) {
@@ -81,13 +81,17 @@ export default function Sidebar({ mobile }: { mobile?: boolean }) {
           Billing
         </NavLink>
         {isAdmin && (
-          <NavLink
-            to="/staff"
-            className={({ isActive }) => `${linkBase} ${isActive ? active : inactive}`}
-          >
-            <ShieldCheck size={18} />
-            Staff Management
-          </NavLink>
+          <>
+            <NavLink to="/staff" className={({ isActive }) => `${linkBase} ${isActive ? active : inactive}`}>
+              <ShieldCheck size={18} /> Staff Management
+            </NavLink>
+            <NavLink to="/hmo-providers" className={({ isActive }) => `${linkBase} ${isActive ? active : inactive}`}>
+              <HeartHandshake size={18} /> HMO Providers
+            </NavLink>
+            <NavLink to="/download-approvals" className={({ isActive }) => `${linkBase} ${isActive ? active : inactive}`}>
+              <Download size={18} /> Download Approvals
+            </NavLink>
+          </>
         )}
       </nav>
 

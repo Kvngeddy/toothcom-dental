@@ -179,6 +179,7 @@ function PatientCard({ patient }: { patient: Patient }) {
       <dl className="space-y-2 text-sm">
         <Row label="Electronic case note number" value={patient.electronic_case_note_number} />
         <Row label="Paper case note number" value={patient.case_note_number} />
+        <Row label="Insurance" value={patient.insurance_type === 'hmo' ? patient.hmo_provider?.name ?? 'HMO' : 'Non-HMO'} />
         <Row label="Phone" value={patient.phone} />
         <Row label="Email" value={patient.email} />
         <Row label="Address" value={patient.address} />

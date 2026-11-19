@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLocation } from '@/contexts/LocationContext'
 import { usePatients } from '@/hooks/usePatients'
+import { authorizeDownload } from '@/lib/downloadApprovals'
 import type { Invoice, InvoiceItem, InvoiceStatus, Payment, PaymentMethod, Service } from '@/types/billings'
 
 function formatNaira(value: number) {
@@ -130,6 +131,7 @@ const STATUS_LABELS: Record<InvoiceStatus, string> = {
 }
 
 export default function BillingPage() {
+  const { staff, isAdmin } = useAuth()
   const { selectedLocationId } = useLocation()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -162,6 +164,19 @@ export default function BillingPage() {
     if (invoices.length === 0) return
     setExporting(true)
     setExportError(null)
+    const approval = await authorizeDownload({
+      isAdmin,
+      requesterId: staff?.id ?? null,
+      resourceType: 'billing_export',
+      resourceId: selectedLocationId,
+      resourceLabel: `Billing export · ${invoices.length} bills`,
+      locationId: selectedLocationId,
+    })
+    if (!approval.allowed) {
+      setExportError(approval.error ?? 'Admin approval is required.')
+      setExporting(false)
+      return
+    }
     const invoiceIds = invoices.map((invoice) => invoice.id)
     const { data: itemRows, error } = await supabase
       .from('invoice_items')
@@ -373,8 +388,7 @@ function InvoiceRow({
 }
 
 function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: () => void }) {
-  const { staff } = useAuth()
-  const isAdmin = staff?.role === 'admin'
+  const { staff, isAdmin } = useAuth()
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
@@ -438,7 +452,17 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
                 </p>
                 <button
                   type="button"
-                  onClick={() => downloadPaymentReceipt(p, invoice, items)}
+                  onClick={() => void (async () => {
+                    const approval = await authorizeDownload({
+                      isAdmin,
+                      requesterId: staff?.id ?? null,
+                      resourceType: 'payment_receipt',
+                      resourceId: p.id,
+                      resourceLabel: `Payment receipt · ${invoice.patients?.full_name ?? 'Patient'} · ${formatNaira(p.amount)}`,
+                    })
+                    if (approval.allowed) downloadPaymentReceipt(p, invoice, items)
+                    else window.alert(approval.error ?? 'Admin approval is required.')
+                  })()}
                   title="Download payment receipt"
                   aria-label={`Download receipt for payment of ${formatNaira(p.amount)}`}
                   className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-clinic-orange-dark)] hover:underline"

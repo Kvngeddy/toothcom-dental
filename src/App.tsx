@@ -13,6 +13,8 @@ import Dashboard from './pages/Dashboard'
 import BillingPage from './pages/billingspage'
 import ServicesList from './pages/serviceList'
 import StaffProfile from './pages/StaffProfile'
+import HmoProviders from './pages/HmoProviders'
+import DownloadApprovals from './pages/DownloadApprovals'
 
 export default function App() {
   return (
@@ -36,6 +38,8 @@ export default function App() {
                 <Route element={<AdminRoute />}>
                   <Route path="/staff" element={<StaffManagement />} />
                   <Route path="/staff/:id" element={<StaffProfile />} />
+                  <Route path="/hmo-providers" element={<HmoProviders />} />
+                  <Route path="/download-approvals" element={<DownloadApprovals />} />
                 </Route>
               </Route>
 

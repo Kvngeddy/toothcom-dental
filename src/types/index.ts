@@ -15,6 +15,9 @@ export interface Patient {
   location_id: string | null
   case_note_number: string | null
   electronic_case_note_number: string | null
+  insurance_type: 'hmo' | 'non_hmo'
+  hmo_provider_id: string | null
+  hmo_provider?: { name: string } | null
   full_name: string
   date_of_birth: string | null
   gender: string | null

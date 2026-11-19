@@ -4,6 +4,7 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx'
 import { supabase } from '@/lib/supabaseClient'
 import type { IntakePayload } from '@/pages/PatientIntakeForm'
 import { useAuth } from '@/contexts/AuthContext'
+import { authorizeDownload } from '@/lib/downloadApprovals'
 
 type IntakeSubmission = {
   registration: IntakePayload['registration']
@@ -49,7 +50,7 @@ export default function IntakeSubmissionViewer({
   const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([])
   const [doctorNoteDraft, setDoctorNoteDraft] = useState('')
   const [savingDoctorNote, setSavingDoctorNote] = useState(false)
-  const { staff } = useAuth()
+  const { staff, isAdmin } = useAuth()
   const canWriteDoctorNotes = staff?.status === 'active' && (staff.role === 'doctor' || staff.role === 'admin')
 
   useEffect(() => {
@@ -115,6 +116,18 @@ export default function IntakeSubmissionViewer({
 
     setDownloading(true)
     setError(null)
+    const approval = await authorizeDownload({
+      isAdmin,
+      requesterId: staff?.id ?? null,
+      resourceType: 'intake_document',
+      resourceId: submissionId,
+      resourceLabel: `Intake document · ${title}`,
+    })
+    if (!approval.allowed) {
+      setError(approval.error)
+      setDownloading(false)
+      return
+    }
     try {
       const paragraphs = [
         new Paragraph({ text: title, heading: HeadingLevel.TITLE }),
