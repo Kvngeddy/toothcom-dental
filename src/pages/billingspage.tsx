@@ -116,6 +116,85 @@ function downloadPaymentReceipt(payment: Payment, invoice: Invoice, items: Invoi
   URL.revokeObjectURL(url)
 }
 
+function downloadHmoAuthorizationReceipt(invoice: Invoice) {
+  const patientName = invoice.patients?.full_name ?? 'Patient'
+  const providerName = invoice.patients?.hmo_provider?.name ?? 'HMO provider'
+  const safeText = (value: string) => value
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replace(/[\\()]/g, '\\$&')
+  const commands: string[] = []
+  const drawText = (x: number, y: number, value: string, size: number, bold = false, color = '0.16 0.18 0.19') => {
+    commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y} Tm (${safeText(value)}) Tj ET`)
+  }
+  const drawLine = (y: number) => commands.push(`0.88 0.88 0.88 RG 0.7 w 48 ${y} m 547 ${y} l S`)
+  const wrapText = (text: string, maxLength: number) => {
+    const words = text.split(/\s+/)
+    const lines: string[] = []
+    let line = ''
+    for (const word of words) {
+      if (line && `${line} ${word}`.length > maxLength) {
+        lines.push(line)
+        line = word
+      } else {
+        line = line ? `${line} ${word}` : word
+      }
+    }
+    if (line) lines.push(line)
+    return lines
+  }
+
+  commands.push('0.12 0.14 0.15 rg 0 744 595 98 re f')
+  commands.push('0.91 0.31 0.13 rg 0 837 595 5 re f')
+  drawText(48, 805, 'TOOTHCOM', 19, true, '1 1 1')
+  drawText(48, 787, 'DENTAL CLINICS', 9, true, '1 1 1')
+  drawText(48, 761, 'HMO TREATMENT AUTHORIZATION RECEIPT', 9, true, '1 0.66 0.48')
+  drawText(48, 710, 'PATIENT', 8, true, '0.48 0.50 0.51')
+  drawText(48, 687, patientName, 15, true)
+  drawText(48, 658, 'HMO PROVIDER', 8, true, '0.48 0.50 0.51')
+  drawText(48, 638, providerName, 12, true)
+  drawText(365, 658, 'AUTHORIZATION CODE', 8, true, '0.48 0.50 0.51')
+  drawText(365, 638, invoice.hmo_authorization_code ?? '', 12, true)
+  drawLine(615)
+  drawText(48, 590, 'TREATMENT APPROVED', 9, true, '0.48 0.50 0.51')
+  const treatmentLines = wrapText(invoice.hmo_treatment ?? '', 88).slice(0, 12)
+  treatmentLines.forEach((line, index) => drawText(48, 565 - index * 18, line, 10))
+  const detailY = 565 - treatmentLines.length * 18 - 24
+  drawLine(detailY + 10)
+  drawText(48, detailY - 12, 'Authorization confirmed', 8, true, '0.48 0.50 0.51')
+  drawText(48, detailY - 31, invoice.hmo_authorized_at ? new Date(invoice.hmo_authorized_at).toLocaleString('en-NG') : new Date().toLocaleString('en-NG'), 10)
+  drawText(48, 77, 'This receipt records the HMO-approved treatment and authorization code.', 9)
+  drawText(48, 55, `Invoice ${invoice.id.slice(0, 8).toUpperCase()}`, 8, false, '0.48 0.50 0.51')
+
+  const stream = `${commands.join('\n')}\n`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets = [0]
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(pdf.length)
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`
+  }
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  const receiptCode = invoice.hmo_authorization_code?.replace(/[^a-zA-Z0-9-]/g, '') || invoice.id.slice(0, 8)
+  const url = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `toothcom-hmo-receipt-${receiptCode}.pdf`
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 const STATUS_STYLES: Record<InvoiceStatus, string> = {
   unpaid: 'bg-red-50 text-red-700',
   partially_paid: 'bg-amber-50 text-amber-700',
@@ -149,7 +228,7 @@ export default function BillingPage() {
     setLoading(true)
     const { data } = await supabase
       .from('invoices')
-      .select('*, patients(full_name)')
+      .select('*, patients(full_name, insurance_type, hmo_provider:hmo_providers(name))')
       .eq('location_id', selectedLocationId)
       .order('created_at', { ascending: false })
     if (data) setInvoices(data as Invoice[])
@@ -202,11 +281,15 @@ export default function BillingPage() {
     }
     const csvCell = (value: unknown) => `"${protectFormula(value).replace(/"/g, '""')}"`
     const csvRows = [
-      ['Invoice ID', 'Patient', 'Date', 'Total', 'Paid', 'Balance due', 'Status', 'Items'],
+      ['Invoice ID', 'Patient', 'Date', 'Coverage', 'HMO Provider', 'Treatment', 'Authorization Code', 'Total', 'Paid', 'Balance due', 'Status', 'Items'],
       ...invoices.map((invoice) => [
         invoice.id,
         invoice.patients?.full_name ?? 'Patient',
         new Date(invoice.created_at).toLocaleDateString(),
+        invoice.patients?.insurance_type === 'hmo' ? 'HMO' : 'Non-HMO',
+        invoice.patients?.hmo_provider?.name ?? '',
+        invoice.hmo_treatment ?? '',
+        invoice.hmo_authorization_code ?? '',
         invoice.subtotal,
         invoice.amount_paid,
         Math.max(invoice.subtotal - invoice.amount_paid, 0),
@@ -277,15 +360,15 @@ export default function BillingPage() {
               <div className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
                 <div>
                   <p className="text-xs text-slate-muted">Total</p>
-                  <p className="mt-0.5 font-medium text-slate-text">{formatNaira(invoice.subtotal)}</p>
+                  <p className="mt-0.5 font-medium text-slate-text">{invoice.patients?.insurance_type === 'hmo' ? invoice.patients.hmo_provider?.name ?? 'HMO' : formatNaira(invoice.subtotal)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-muted">Paid</p>
-                  <p className="mt-0.5 text-slate-text">{formatNaira(invoice.amount_paid)}</p>
+                  <p className="mt-0.5 text-slate-text">{invoice.patients?.insurance_type === 'hmo' ? 'Authorization' : formatNaira(invoice.amount_paid)}</p>
                 </div>
                 <div className="col-span-2">
-                  <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${STATUS_STYLES[invoice.status]}`}>
-                    {STATUS_LABELS[invoice.status]}
+                  <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${invoice.patients?.insurance_type === 'hmo' ? (invoice.hmo_authorized_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700') : STATUS_STYLES[invoice.status]}`}>
+                    {invoice.patients?.insurance_type === 'hmo' ? (invoice.hmo_authorized_at ? 'HMO authorized' : 'Awaiting HMO authorization') : STATUS_LABELS[invoice.status]}
                   </span>
                 </div>
               </div>
@@ -366,13 +449,16 @@ function InvoiceRow({
         <td className="px-5 py-3 text-slate-muted">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </td>
-        <td className="px-5 py-3 font-medium text-slate-text">{invoice.patients?.full_name ?? '—'}</td>
+        <td className="px-5 py-3 font-medium text-slate-text">
+          {invoice.patients?.full_name ?? '—'}
+          {invoice.patients?.insurance_type === 'hmo' && <span className="ml-2 text-xs text-slate-muted">HMO</span>}
+        </td>
         <td className="px-5 py-3 text-slate-muted">{new Date(invoice.created_at).toLocaleDateString()}</td>
-        <td className="px-5 py-3 text-right text-slate-text">{formatNaira(invoice.subtotal)}</td>
-        <td className="px-5 py-3 text-right text-slate-muted">{formatNaira(invoice.amount_paid)}</td>
+        <td className="px-5 py-3 text-right text-slate-text">{invoice.patients?.insurance_type === 'hmo' ? 'HMO' : formatNaira(invoice.subtotal)}</td>
+        <td className="px-5 py-3 text-right text-slate-muted">{invoice.patients?.insurance_type === 'hmo' ? '—' : formatNaira(invoice.amount_paid)}</td>
         <td className="px-5 py-3">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[invoice.status]}`}>
-            {STATUS_LABELS[invoice.status]}
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${invoice.patients?.insurance_type === 'hmo' ? (invoice.hmo_authorized_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700') : STATUS_STYLES[invoice.status]}`}>
+            {invoice.patients?.insurance_type === 'hmo' ? (invoice.hmo_authorized_at ? 'HMO authorized' : 'Awaiting HMO authorization') : STATUS_LABELS[invoice.status]}
           </span>
         </td>
       </tr>
@@ -394,6 +480,9 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
   const [loading, setLoading] = useState(true)
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showVoidConfirm, setShowVoidConfirm] = useState(false)
+  const [hmoMessage, setHmoMessage] = useState<string | null>(null)
+  const [authorizingHmo, setAuthorizingHmo] = useState(false)
+  const isHmoInvoice = invoice.patients?.insurance_type === 'hmo'
 
   async function fetchDetail() {
     setLoading(true)
@@ -413,10 +502,71 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
 
   const balanceDue = invoice.subtotal - invoice.amount_paid
 
+  async function handleHmoAuthorization() {
+    setAuthorizingHmo(true)
+    setHmoMessage(null)
+    let authorizedInvoice = invoice
+    if (!invoice.hmo_authorized_at) {
+      const { data, error } = await supabase.from('invoices').update({
+        hmo_authorized_at: new Date().toISOString(),
+        hmo_authorized_by: staff?.id ?? null,
+      }).eq('id', invoice.id).select('*, patients(full_name, insurance_type, hmo_provider:hmo_providers(name))').single()
+      if (error || !data) {
+        setHmoMessage(error?.message ?? 'Could not save HMO authorization.')
+        setAuthorizingHmo(false)
+        return
+      }
+      authorizedInvoice = data as Invoice
+    }
+    const approval = await authorizeDownload({
+      isAdmin,
+      requesterId: staff?.id ?? null,
+      resourceType: 'payment_receipt',
+      resourceId: `hmo-${invoice.id}`,
+      resourceLabel: `HMO authorization receipt · ${invoice.patients?.full_name ?? 'Patient'}`,
+      locationId: invoice.location_id ?? null,
+    })
+    if (approval.allowed) downloadHmoAuthorizationReceipt(authorizedInvoice)
+    else setHmoMessage(approval.error ?? 'Admin approval is required to download the receipt.')
+    setAuthorizingHmo(false)
+    onChanged()
+  }
+
   if (loading) return <p className="text-sm text-slate-muted">Loading…</p>
 
   return (
     <div className="space-y-4">
+      {isHmoInvoice ? (
+        <section className="max-w-2xl rounded-lg border border-[var(--color-border-soft)] bg-white p-4">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <dt className="text-xs font-medium text-slate-muted">Treatment</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-text">{invoice.hmo_treatment || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-muted">HMO provider</dt>
+              <dd className="mt-1 text-sm text-slate-text">{invoice.patients?.hmo_provider?.name ?? 'HMO provider'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-slate-muted">Authorization code</dt>
+              <dd className="mt-1 text-sm text-slate-text">{invoice.hmo_authorization_code || '—'}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs font-medium text-slate-muted">HMO authorization</dt>
+              <dd className="mt-1 text-sm text-slate-text">{invoice.hmo_authorized_at ? `Authorized ${new Date(invoice.hmo_authorized_at).toLocaleString()}` : 'Not yet confirmed'}</dd>
+            </div>
+          </dl>
+          {invoice.hmo_authorization_code && (
+            <button type="button" onClick={() => void handleHmoAuthorization()} disabled={authorizingHmo} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-clinic-orange)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[var(--color-clinic-orange-dark)] disabled:opacity-60">
+              <Download size={16} /> {authorizingHmo ? 'Processing…' : invoice.hmo_authorized_at ? 'Download HMO receipt' : 'Confirm HMO authorization & create receipt'}
+            </button>
+          )}
+          {hmoMessage && <p role="status" className="mt-3 text-sm text-slate-muted">{hmoMessage}</p>}
+          {isAdmin && invoice.status !== 'void' && (
+            <button type="button" onClick={() => setShowVoidConfirm(true)} className="ml-3 text-sm font-medium text-red-600 hover:underline">Void bill</button>
+          )}
+        </section>
+      ) : <>
       <div className="overflow-x-auto">
       <table className="w-full min-w-[32rem] text-sm">
         <thead>
@@ -529,6 +679,11 @@ function InvoiceDetail({ invoice, onChanged }: { invoice: Invoice; onChanged: ()
             onChanged()
           }}
         />
+      )}
+      </>}
+
+      {showVoidConfirm && isHmoInvoice && (
+        <VoidInvoiceModal invoiceId={invoice.id} onClose={() => setShowVoidConfirm(false)} onVoided={() => { setShowVoidConfirm(false); onChanged() }} />
       )}
     </div>
   )
@@ -709,6 +864,8 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
   const [patientSearch, setPatientSearch] = useState('')
   const { patients } = usePatients(patientSearch, locationId)
   const [patientId, setPatientId] = useState('')
+  const [hmoTreatment, setHmoTreatment] = useState('')
+  const [hmoAuthorizationCode, setHmoAuthorizationCode] = useState('')
   const [services, setServices] = useState<Service[]>([])
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()])
   const [submitting, setSubmitting] = useState(false)
@@ -730,6 +887,8 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
     () => lines.reduce((sum, l) => sum + (Number(l.unitPrice) || 0) * (Number(l.quantity) || 0), 0),
     [lines]
   )
+  const selectedPatient = patients.find((patient) => patient.id === patientId)
+  const isHmoPatient = selectedPatient?.insurance_type === 'hmo'
 
   function updateLine(key: string, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -754,6 +913,25 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
   async function handleSubmit() {
     if (!patientId) {
       setError('Select a patient.')
+      return
+    }
+    if (isHmoPatient && (!hmoTreatment.trim() || !hmoAuthorizationCode.trim())) {
+      setError('Enter the treatment and HMO authorization code.')
+      return
+    }
+    if (isHmoPatient) {
+      setSubmitting(true)
+      setError(null)
+      const { error: hmoInvoiceError } = await supabase.from('invoices').insert({
+        patient_id: patientId,
+        created_by: staff?.id ?? null,
+        location_id: locationId,
+        hmo_treatment: hmoTreatment.trim(),
+        hmo_authorization_code: hmoAuthorizationCode.trim(),
+      })
+      setSubmitting(false)
+      if (hmoInvoiceError) setError(hmoInvoiceError.message)
+      else onCreated()
       return
     }
     const validLines = lines.filter((l) => l.description.trim() && Number(l.unitPrice) > 0)
@@ -825,15 +1003,26 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
                     }}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--color-clinic-orange-tint)]"
                   >
-                    {p.full_name}
+                    {p.full_name}{p.insurance_type === 'hmo' ? ` · HMO${p.hmo_provider?.name ? `: ${p.hmo_provider.name}` : ''}` : ''}
                   </button>
                 ))}
               </div>
             )}
-            {patientId && <p className="text-xs text-emerald-600 mt-1">Patient selected.</p>}
+            {patientId && <p className="text-xs text-emerald-600 mt-1">{isHmoPatient ? `HMO patient${selectedPatient?.hmo_provider?.name ? ` · ${selectedPatient.hmo_provider.name}` : ''}` : 'Non-HMO patient selected.'}</p>}
           </div>
 
-          <div>
+          {isHmoPatient ? (
+            <div className="space-y-3 rounded-lg border border-[var(--color-border-soft)] p-4">
+              <div>
+                <label htmlFor="hmo-treatment" className="mb-1 block text-sm font-medium">Treatment</label>
+                <textarea id="hmo-treatment" rows={3} value={hmoTreatment} onChange={(event) => setHmoTreatment(event.target.value)} className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]" />
+              </div>
+              <div>
+                <label htmlFor="hmo-authorization-code" className="mb-1 block text-sm font-medium">HMO authorization code</label>
+                <input id="hmo-authorization-code" value={hmoAuthorizationCode} onChange={(event) => setHmoAuthorizationCode(event.target.value)} className="w-full rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]" />
+              </div>
+            </div>
+          ) : <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Services</label>
               <button
@@ -897,12 +1086,12 @@ function CreateInvoiceModal({ onClose, onCreated, locationId }: { onClose: () =>
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
-          <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border-soft)]">
+          {!isHmoPatient && <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border-soft)]">
             <span className="text-sm text-slate-muted">Total</span>
             <span className="font-display font-semibold text-lg text-slate-text">{formatNaira(total)}</span>
-          </div>
+          </div>}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

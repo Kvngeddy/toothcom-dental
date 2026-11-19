@@ -69,15 +69,24 @@ export type InvoiceStatus = 'unpaid' | 'partially_paid' | 'paid' | 'void'
 export interface Invoice {
   id: string
   patient_id: string
+  location_id: string | null
   status: InvoiceStatus
   subtotal: number
   amount_paid: number
   notes: string | null
+  hmo_treatment: string | null
+  hmo_authorization_code: string | null
+  hmo_authorized_at: string | null
+  hmo_authorized_by: string | null
   created_by: string | null
   created_at: string
   updated_at: string
   // Present when the invoice is fetched with a patient join.
-  patients?: { full_name: string } | null
+  patients?: {
+    full_name: string
+    insurance_type?: 'hmo' | 'non_hmo'
+    hmo_provider?: { name: string } | null
+  } | null
 }
 
 export interface InvoiceItem {
