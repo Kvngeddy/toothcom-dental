@@ -1,35 +1,64 @@
-import { useState } from 'react'
-import { FileStack, Plus, X, UploadCloud, Loader2, Check, Save } from 'lucide-react'
-import { useCaseNotes, createCaseNote, updateCaseNoteStaffNote, uploadCaseNotePage } from '@/hooks/useCaseNotes'
+import { useEffect, useState } from 'react'
+import { FileStack, Plus, X, UploadCloud, Loader2, Check } from 'lucide-react'
+import { useCaseNotes, createCaseNote, uploadCaseNotePage } from '@/hooks/useCaseNotes'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabaseClient'
 import PageViewer from '@/components/PageViewer'
 import IntakeSubmissionViewer from '@/components/IntakeSubmissionViewer'
 import { GenerateIntakeLinkButton } from '@/components/GeerateIntakeLinkButton'
 
+type DoctorNote = { id: string; case_note_id: string; note: string; created_by: string | null; created_at: string }
+
 export default function CaseNotesTab({ patientId }: { patientId: string }) {
   const { caseNotes, loading, refetch } = useCaseNotes(patientId)
+  const { staff } = useAuth()
   const [showNew, setShowNew] = useState(false)
   const [viewing, setViewing] = useState<{ id: string; title: string } | null>(null)
   const [viewingIntake, setViewingIntake] = useState<{ id: string; title: string } | null>(null)
-  const [staffNoteDrafts, setStaffNoteDrafts] = useState<Record<string, string>>({})
-  const [savingStaffNoteId, setSavingStaffNoteId] = useState<string | null>(null)
-  const [staffNoteError, setStaffNoteError] = useState<{ id: string; message: string } | null>(null)
+  const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([])
+  const [doctorNoteDrafts, setDoctorNoteDrafts] = useState<Record<string, string>>({})
+  const [savingDoctorNoteId, setSavingDoctorNoteId] = useState<string | null>(null)
+  const [doctorNoteError, setDoctorNoteError] = useState<{ id: string; message: string } | null>(null)
 
-  async function saveStaffNote(noteId: string) {
-    setSavingStaffNoteId(noteId)
-    setStaffNoteError(null)
-    const { error } = await updateCaseNoteStaffNote(noteId, staffNoteDrafts[noteId] ?? '')
-    if (error) {
-      setStaffNoteError({ id: noteId, message: error.message })
-    } else {
-      await refetch()
-      setStaffNoteDrafts((drafts) => {
-        const next = { ...drafts }
-        delete next[noteId]
-        return next
-      })
+  useEffect(() => {
+    let active = true
+    const caseNoteIds = caseNotes.map((note) => note.id)
+    if (caseNoteIds.length === 0) {
+      setDoctorNotes([])
+      return () => { active = false }
     }
-    setSavingStaffNoteId(null)
+
+    void supabase
+      .from('case_note_doctor_notes')
+      .select('id, case_note_id, note, created_by, created_at')
+      .in('case_note_id', caseNoteIds)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        if (active) setDoctorNotes((data as DoctorNote[] | null) ?? [])
+      })
+
+    return () => { active = false }
+  }, [caseNotes])
+
+  async function addDoctorNote(caseNoteId: string) {
+    const draft = doctorNoteDrafts[caseNoteId]?.trim()
+    if (!draft || !staff) return
+
+    setSavingDoctorNoteId(caseNoteId)
+    setDoctorNoteError(null)
+    const { data, error } = await supabase
+      .from('case_note_doctor_notes')
+      .insert({ case_note_id: caseNoteId, note: draft, created_by: staff.id })
+      .select('id, case_note_id, note, created_by, created_at')
+      .single()
+
+    if (error) {
+      setDoctorNoteError({ id: caseNoteId, message: error.message })
+    } else if (data) {
+      setDoctorNotes((notes) => [...notes, data as DoctorNote])
+      setDoctorNoteDrafts((drafts) => ({ ...drafts, [caseNoteId]: '' }))
+    }
+    setSavingDoctorNoteId(null)
   }
 
   return (
@@ -100,28 +129,42 @@ export default function CaseNotesTab({ patientId }: { patientId: string }) {
               </div>
             </button>
             <div className="mt-3 border-t border-[var(--color-border-soft)] pt-3">
-              <label htmlFor={`staff-note-${note.id}`} className="mb-1 block text-xs font-medium text-slate-muted">
-                Internal staff note
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <p className="mb-2 text-xs font-medium text-slate-muted">Notes</p>
+              <div className="space-y-3">
+                {doctorNotes
+                  .filter((doctorNote) => doctorNote.case_note_id === note.id)
+                  .map((doctorNote) => (
+                    <article key={doctorNote.id} className="border-b border-[var(--color-border-soft)] pb-3 last:border-0">
+                      <p className="whitespace-pre-wrap text-sm text-slate-text">{doctorNote.note}</p>
+                      <p className="mt-1 text-xs text-slate-muted">{new Date(doctorNote.created_at).toLocaleString()}</p>
+                    </article>
+                  ))}
+                {note.staff_note?.trim() && !doctorNotes.some((doctorNote) => doctorNote.case_note_id === note.id && doctorNote.note === note.staff_note) && (
+                  <article className="border-b border-[var(--color-border-soft)] pb-3 last:border-0">
+                    <p className="whitespace-pre-wrap text-sm text-slate-text">{note.staff_note}</p>
+                    <p className="mt-1 text-xs text-slate-muted">{new Date(note.created_at).toLocaleString()}</p>
+                  </article>
+                )}
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
                 <textarea
-                  id={`staff-note-${note.id}`}
-                  value={staffNoteDrafts[note.id] ?? note.staff_note ?? ''}
-                  onChange={(event) => setStaffNoteDrafts((drafts) => ({ ...drafts, [note.id]: event.target.value }))}
+                  id={`doctor-note-${note.id}`}
+                  value={doctorNoteDrafts[note.id] ?? ''}
+                  onChange={(event) => setDoctorNoteDrafts((drafts) => ({ ...drafts, [note.id]: event.target.value }))}
                   rows={2}
-                  placeholder="Add a note for clinic staff..."
+                  placeholder="Add a note..."
                   className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-clinic-orange)]"
                 />
                 <button
-                  onClick={() => void saveStaffNote(note.id)}
-                  disabled={savingStaffNoteId === note.id || (staffNoteDrafts[note.id] ?? note.staff_note ?? '') === (note.staff_note ?? '')}
+                  onClick={() => void addDoctorNote(note.id)}
+                  disabled={savingDoctorNoteId === note.id || !doctorNoteDrafts[note.id]?.trim()}
                   className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-sm font-medium text-slate-text hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {savingStaffNoteId === note.id ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                  Save note
+                  {savingDoctorNoteId === note.id ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                  Add note
                 </button>
               </div>
-              {staffNoteError?.id === note.id && <p className="mt-1 text-xs text-red-600">{staffNoteError.message}</p>}
+              {doctorNoteError?.id === note.id && <p className="mt-1 text-xs text-red-600">{doctorNoteError.message}</p>}
             </div>
           </div>
         ))}
