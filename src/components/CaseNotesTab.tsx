@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { FileStack, Plus, X, UploadCloud, Loader2, Check } from 'lucide-react'
-import { useCaseNotes, createCaseNote, uploadCaseNotePage } from '@/hooks/useCaseNotes'
+import { FileStack, Plus, X, UploadCloud, Loader2, Check, ImagePlus } from 'lucide-react'
+import { useCaseNotes, createCaseNote, fetchCaseNoteXrays, getSignedReadUrl, uploadCaseNotePage, uploadCaseNoteXray, type CaseNoteXray } from '@/hooks/useCaseNotes'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabaseClient'
 import PageViewer from '@/components/PageViewer'
@@ -16,6 +16,10 @@ export default function CaseNotesTab({ patientId }: { patientId: string }) {
   const [viewing, setViewing] = useState<{ id: string; title: string } | null>(null)
   const [viewingIntake, setViewingIntake] = useState<{ id: string; title: string } | null>(null)
   const [doctorNotes, setDoctorNotes] = useState<DoctorNote[]>([])
+  const [xrays, setXrays] = useState<CaseNoteXray[]>([])
+  const [xrayUrls, setXrayUrls] = useState<Record<string, string>>({})
+  const [uploadingXrayId, setUploadingXrayId] = useState<string | null>(null)
+  const [xrayError, setXrayError] = useState<{ id: string; message: string } | null>(null)
   const [doctorNoteDrafts, setDoctorNoteDrafts] = useState<Record<string, string>>({})
   const [savingDoctorNoteId, setSavingDoctorNoteId] = useState<string | null>(null)
   const [doctorNoteError, setDoctorNoteError] = useState<{ id: string; message: string } | null>(null)
@@ -25,20 +29,62 @@ export default function CaseNotesTab({ patientId }: { patientId: string }) {
     const caseNoteIds = caseNotes.map((note) => note.id)
     if (caseNoteIds.length === 0) {
       setDoctorNotes([])
+      setXrays([])
       return () => { active = false }
     }
 
-    void supabase
-      .from('case_note_doctor_notes')
-      .select('id, case_note_id, note, created_by, created_at')
-      .in('case_note_id', caseNoteIds)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => {
-        if (active) setDoctorNotes((data as DoctorNote[] | null) ?? [])
-      })
+    void Promise.all([
+      supabase
+        .from('case_note_doctor_notes')
+        .select('id, case_note_id, note, created_by, created_at')
+        .in('case_note_id', caseNoteIds)
+        .order('created_at', { ascending: true }),
+      fetchCaseNoteXrays(caseNoteIds),
+    ]).then(([notesResult, xraysResult]) => {
+      if (!active) return
+      setDoctorNotes((notesResult.data as DoctorNote[] | null) ?? [])
+      setXrays(xraysResult.data)
+    })
 
     return () => { active = false }
   }, [caseNotes])
+
+  useEffect(() => {
+    let active = true
+    void Promise.all(xrays.map(async (xray) => {
+      const { url } = await getSignedReadUrl(xray.object_path)
+      return url ? [xray.id, url] as const : null
+    })).then((entries) => {
+      if (active) setXrayUrls(Object.fromEntries(entries.filter((entry) => entry !== null)))
+    })
+    return () => { active = false }
+  }, [xrays])
+
+  async function handleXrayUpload(caseNoteId: string, files: FileList | null) {
+    if (!files || files.length === 0 || !staff || staff.status !== 'active') return
+    const selectedFiles = Array.from(files)
+    if (selectedFiles.some((file) => !file.type.startsWith('image/'))) {
+      setXrayError({ id: caseNoteId, message: 'Select image files only.' })
+      return
+    }
+
+    setUploadingXrayId(caseNoteId)
+    setXrayError(null)
+    for (const file of selectedFiles) {
+      const { data, error } = await uploadCaseNoteXray({
+        caseNoteId,
+        patientId,
+        file,
+        uploadedBy: staff.id,
+      })
+      if (error) {
+        setXrayError({ id: caseNoteId, message: error.message })
+        break
+      }
+      if (data) setXrays((current) => [...current, data])
+    }
+    setUploadingXrayId(null)
+  }
 
   async function addDoctorNote(caseNoteId: string) {
     const draft = doctorNoteDrafts[caseNoteId]?.trim()
@@ -166,6 +212,47 @@ export default function CaseNotesTab({ patientId }: { patientId: string }) {
               </div>
               {doctorNoteError?.id === note.id && <p className="mt-1 text-xs text-red-600">{doctorNoteError.message}</p>}
             </div>
+            {staff?.status === 'active' && (
+              <div className="mt-3 border-t border-[var(--color-border-soft)] pt-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-slate-muted">X-rays</p>
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border-soft)] px-3 py-2 text-xs font-medium text-slate-text hover:bg-gray-50">
+                    {uploadingXrayId === note.id ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
+                    Upload images
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={uploadingXrayId === note.id}
+                      className="sr-only"
+                      onChange={(event) => {
+                        void handleXrayUpload(note.id, event.target.files)
+                        event.target.value = ''
+                      }}
+                    />
+                  </label>
+                </div>
+                {xrays.filter((xray) => xray.case_note_id === note.id).length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {xrays.filter((xray) => xray.case_note_id === note.id).map((xray) => (
+                      <a
+                        key={xray.id}
+                        href={xrayUrls[xray.id]}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={xray.file_name}
+                        className="block h-20 w-20 overflow-hidden rounded-lg border border-[var(--color-border-soft)] bg-gray-50"
+                      >
+                        {xrayUrls[xray.id] && <img src={xrayUrls[xray.id]} alt={xray.file_name} className="h-full w-full object-cover" />}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-muted">No X-rays uploaded.</p>
+                )}
+                {xrayError?.id === note.id && <p role="alert" className="mt-2 text-xs text-red-600">{xrayError.message}</p>}
+              </div>
+            )}
           </div>
         ))}
       </div>

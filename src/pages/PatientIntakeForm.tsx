@@ -2,6 +2,7 @@ import { useState } from "react";
 
 // ---------------- Types ----------------
 export type RegistrationValues = {
+  dateOfBirth: string;
   sex: "male" | "female" | "other" | "";
   homeAddress: string;
   occupation: string;
@@ -76,7 +77,7 @@ const CONDITIONS = [
 ];
 
 const emptyRegistration: RegistrationValues = {
-  sex: "", homeAddress: "", occupation: "", officeAddress: "", email: "",
+  dateOfBirth: "", sex: "", homeAddress: "", occupation: "", officeAddress: "", email: "",
   maritalStatus: "", officePhone: "", whatsappNo: "", nextOfKinName: "",
   nextOfKinAddress: "", nextOfKinPhone: "",
 };
@@ -186,9 +187,19 @@ export function PatientIntakeForm({
   const [dental, setDental] = useState<DentalHistoryValues>(emptyDental);
   const [consentName, setConsentName] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
+  const [dateOfBirthError, setDateOfBirthError] = useState("");
 
   function next() { setStep((s) => Math.min(s + 1, totalSteps)); }
   function back() { setStep((s) => Math.max(s - 1, 1)); }
+
+  function continueRegistration() {
+    if (!registration.dateOfBirth) {
+      setDateOfBirthError("Date of birth is required.");
+      return;
+    }
+    setDateOfBirthError("");
+    next();
+  }
 
   function toggleCondition(name: string) {
     setMedical((m) => ({
@@ -211,6 +222,24 @@ export function PatientIntakeForm({
         <div>
           <StepHeader title="Registration" step={1} total={totalSteps} />
           <div className="space-y-3">
+            <div>
+              <label htmlFor="intake-date-of-birth" className="mb-1 block text-sm font-medium text-gray-700">Date of birth <span className="text-red-600">*</span></label>
+              <input
+                id="intake-date-of-birth"
+                type="date"
+                value={registration.dateOfBirth}
+                max={new Date().toISOString().slice(0, 10)}
+                required
+                aria-invalid={!!dateOfBirthError}
+                aria-describedby={dateOfBirthError ? "intake-date-of-birth-error" : undefined}
+                onChange={(e) => {
+                  setRegistration({ ...registration, dateOfBirth: e.target.value });
+                  setDateOfBirthError("");
+                }}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300"
+              />
+              {dateOfBirthError && <p id="intake-date-of-birth-error" className="mt-1 text-xs text-red-600">{dateOfBirthError}</p>}
+            </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Sex</label>
               <select
@@ -239,7 +268,7 @@ export function PatientIntakeForm({
           </div>
           <button
             type="button"
-            onClick={next}
+            onClick={continueRegistration}
             className="mt-6 w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-600"
           >
             Continue
